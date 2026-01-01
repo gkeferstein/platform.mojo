@@ -243,6 +243,104 @@ const sidebarSections: SidebarSection[] = [
 - Aktives Item wird automatisch hervorgehoben
 - Sidebar Collapse-State wird gespeichert (localStorage)
 
+#### Client-Side Navigation
+
+`MojoAppLayout` verwendet `MojoSidebar` für die Navigation, die `linkComponent` unterstützt. Für client-side Navigation ohne Page-Reload gibt es zwei Optionen:
+
+**Option 1: MojoAppLayout mit Next.js Link (Standard)**
+
+```tsx
+import { MojoAppLayout } from '@gkeferstein/design'
+import Link from 'next/link'
+import { Home, Users, Settings } from 'lucide-react'
+
+const sidebarSections = [
+  {
+    id: 'main',
+    items: [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: <Home />,
+        href: '/',
+        linkComponent: Link, // Next.js Link für client-side Navigation
+      },
+      {
+        id: 'contacts',
+        label: 'Kontakte',
+        icon: <Users />,
+        href: '/contacts',
+        linkComponent: Link,
+      },
+    ],
+  },
+  {
+    id: 'admin',
+    title: 'Administration',
+    items: [
+      {
+        id: 'settings',
+        label: 'Einstellungen',
+        icon: <Settings />,
+        href: '/settings',
+        linkComponent: Link,
+      },
+    ],
+  },
+]
+
+<MojoAppLayout
+  currentApp="kontakte"
+  user={user}
+  tenant={tenant}
+  tenants={tenants}
+  entitlements={entitlements}
+  sidebarSections={sidebarSections}
+  sidebarLogo={<KontakteLogo />}
+>
+  {children}
+</MojoAppLayout>
+```
+
+**Option 2: MojoShell mit UnifiedSidebar (Für automatische Next.js Link-Integration)**
+
+Wenn du die automatische Next.js Link-Integration von `UnifiedSidebar` nutzen möchtest, kannst du `MojoShell` direkt verwenden:
+
+```tsx
+import { MojoShell, UnifiedSidebar, MojoGlobalHeader } from '@gkeferstein/design'
+import { usePathname } from 'next/navigation'
+
+const pathname = usePathname()
+const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+<MojoShell
+  sidebar={
+    <UnifiedSidebar
+      sections={sidebarSections}
+      pathname={pathname}
+      collapsed={sidebarCollapsed}
+      onCollapsedChange={setSidebarCollapsed}
+    />
+  }
+  topbar={<MojoGlobalHeader {...headerProps} />}
+  sidebarCollapsed={sidebarCollapsed}
+>
+  {children}
+</MojoShell>
+```
+
+**Client-Side Navigation Vorteile:**
+- ✅ Kein Page-Reload beim Navigieren zwischen Seiten
+- ✅ Sidebar bleibt erhalten, nur Content-Bereich wird aktualisiert
+- ✅ Automatisches Prefetching (bei Next.js Link)
+- ✅ Smooth Navigation ohne sichtbares Flackern
+- ✅ Bessere Performance durch client-side Routing
+
+**Hinweis:** 
+- `MojoAppLayout` mit `linkComponent: Link` ist die Standard-Lösung für client-side Navigation
+- `UnifiedSidebar` lädt automatisch Next.js Link, wenn verfügbar, und fällt auf `<a>` Tags zurück, wenn Next.js nicht verfügbar ist
+- Für `UnifiedSidebar` muss `MojoShell` direkt verwendet werden (siehe Abschnitt "Legacy: MojoShell direkt verwenden")
+
 #### Legacy: MojoShell direkt verwenden
 
 **NUR** wenn spezielle Anforderungen bestehen, kann `MojoShell` direkt verwendet werden. In diesem Fall müssen Header, Sidebar und Footer manuell kombiniert werden. Dies ist jedoch **nicht empfohlen** und sollte nur in Ausnahmefällen verwendet werden.
