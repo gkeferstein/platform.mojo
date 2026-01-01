@@ -27,5 +27,3 @@ Thumbs.db
 package-lock.json
 yarn.lock
 
-packages/tenant/dist/
-packages/tenant/node_modules/

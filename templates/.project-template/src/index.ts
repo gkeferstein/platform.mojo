@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,7 +10,7 @@ app.use(express.json());
 // ============================================
 // Health Endpoint (PFLICHT für alle MOJO Apps)
 // ============================================
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     service: SERVICE_NAME,
@@ -23,7 +23,7 @@ app.get('/health', (req, res) => {
 // ============================================
 // Root Endpoint
 // ============================================
-app.get('/', (req, res) => {
+app.get('/', (_req: Request, res: Response) => {
   res.json({
     service: SERVICE_NAME,
     version: VERSION,
@@ -35,7 +35,7 @@ app.get('/', (req, res) => {
 // ============================================
 // API Endpoints
 // ============================================
-app.get('/api', (req, res) => {
+app.get('/api', (_req: Request, res: Response) => {
   res.json({
     success: true,
     data: {
@@ -51,7 +51,7 @@ app.get('/api', (req, res) => {
 // ============================================
 // Start Server
 // ============================================
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`🚀 ${SERVICE_NAME} v${VERSION} gestartet`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`❤️  Health: http://localhost:${PORT}/health`);
