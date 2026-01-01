@@ -2,7 +2,7 @@
 
 > Verbindliche Standards für alle MOJO-Anwendungen (kontakte.mojo, accounts.mojo, payments.mojo, campus.mojo)
 
-**Version:** 1.5.0  
+**Version:** 1.6.0  
 **Letzte Aktualisierung:** 01. Januar 2026
 
 ---
@@ -57,6 +57,16 @@ Alle API-Endpoints sind unter `/api` erreichbar (NICHT `/api/v1`).
 1. [Design System & UX](#1-design-system--ux)
 2. [Navigation Standards](#2-navigation-standards)
 3. [Clerk Authentication](#3-clerk-authentication)
+   - [3.1 Clerk Setup](#31-clerk-setup)
+   - [3.2 Protected API Routes (Next.js)](#32-protected-api-routes-nextjs)
+   - [3.3 Protected API Routes (Fastify/Express)](#33-protected-api-routes-fastifyexpress)
+   - [3.4 Clerk Webhooks](#34-clerk-webhooks)
+   - [3.5 Session Token für Service-to-Service](#35-session-token-für-service-to-service)
+   - [3.6 Sign-In/Sign-Up Seiten](#36-sign-insign-up-seiten-nextjs)
+   - [3.7 Redirect-Logik nach Sign-In/Sign-Up](#37-redirect-logik-nach-sign-insign-up)
+   - [3.8 Sign-Out Implementation](#38-sign-out-implementation)
+   - [3.9 Neue User & Organizations (Onboarding Flow)](#39-neue-user--organizations-onboarding-flow)
+   - [3.10 Debugging Checklist für Auth-Probleme](#310-debugging-checklist-für-auth-probleme)
 4. [Multitenancy](#4-multitenancy)
 5. [API Standards](#5-api-standards)
 6. [Error Handling](#6-error-handling)
@@ -566,11 +576,12 @@ Die manuelle Kombination von `MojoShell`, `MojoGlobalHeader` und `MojoSidebar` w
 
 ## 3. Clerk Authentication
 
-### 2.1 Clerk Setup
+### 3.1 Clerk Setup
 
 ```typescript
 // middleware.ts (Next.js)
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
 const isPublicRoute = createRouteMatcher([
   '/',
@@ -579,10 +590,33 @@ const isPublicRoute = createRouteMatcher([
   '/api/webhooks(.*)',
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
+export default clerkMiddleware(async (auth, request) => {
+  const { userId } = await auth();
+  const { pathname } = request.nextUrl;
+
+  // Eingeloggt + auf Sign-In → Dashboard (verhindert Redirect-Loops)
+  if (userId && pathname.startsWith('/sign-in')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Eingeloggt + auf Sign-Up → Dashboard
+  if (userId && pathname.startsWith('/sign-up')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  // Nicht eingeloggt + protected Route → Sign-In
+  if (!userId && !isPublicRoute(request)) {
+    const signInUrl = new URL('/sign-in', request.url);
+    signInUrl.searchParams.set('redirect_url', pathname);
+    return NextResponse.redirect(signInUrl);
+  }
+
+  // Protected Routes prüfen
+  if (!isPublicRoute(request)) {
     await auth.protect();
   }
+
+  return NextResponse.next();
 });
 
 export const config = {
@@ -590,15 +624,18 @@ export const config = {
 };
 ```
 
-### 2.2 Protected API Routes (Next.js)
+**WICHTIG:** Middleware ist der einzige Ort für Auth-Redirects! Siehe Abschnitt 3.7 für Details.
+
+### 3.2 Protected API Routes (Next.js)
 
 ```typescript
 // app/api/example/route.ts
 import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { verifyToken } from '@clerk/nextjs/server';
 
-export async function GET() {
-  const { userId, orgId } = await auth();
+export async function GET(request: Request) {
+  const { userId, orgId, getToken } = await auth();
   
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -606,12 +643,32 @@ export async function GET() {
   
   // orgId = aktueller Tenant (Clerk Organization)
   const tenantId = orgId || userId; // Fallback auf Personal Account
+
+  // Optional: JWT Token verifizieren (mit Clock Skew Toleranz)
+  try {
+    const token = await getToken();
+    if (token) {
+      await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+        clockSkewInMs: 60000, // 60 Sekunden Toleranz für Clock Skew
+      });
+    }
+  } catch (error) {
+    // Clock Skew Error ignorieren, aber andere Fehler weiterwerfen
+    if (!error.message?.includes('cannot be used prior to not before date')) {
+      throw error;
+    }
+  }
   
   // Business Logic...
 }
 ```
 
-### 2.3 Protected API Routes (Fastify/Express)
+**JWT Clock Skew:**
+- Problem: Server-Uhren können leicht abweichen, führt zu "cannot be used prior to not before date" Fehlern
+- Lösung: `clockSkewInMs: 60000` (60 Sekunden Toleranz) beim Token-Verify setzen
+
+### 3.3 Protected API Routes (Fastify/Express)
 
 ```typescript
 // Fastify Plugin
@@ -631,7 +688,7 @@ fastify.addHook('preHandler', async (request, reply) => {
 });
 ```
 
-### 2.4 Clerk Webhooks
+### 3.4 Clerk Webhooks
 
 ```typescript
 // Standard Webhook Handler für User/Org Sync
@@ -667,7 +724,7 @@ export async function POST(req: Request) {
 }
 ```
 
-### 2.5 Session Token für Service-to-Service
+### 3.5 Session Token für Service-to-Service
 
 ```typescript
 // Frontend: Token für API Calls holen
@@ -691,11 +748,728 @@ export function useApiClient() {
 }
 ```
 
+### 3.6 Sign-In/Sign-Up Seiten (Next.js)
+
+**ALLE Apps MÜSSEN einheitliche Sign-In/Sign-Up Seiten implementieren.**
+
+#### ⚠️ WICHTIG: Next.js Route Groups & Layouts
+
+**Route Groups `(groupName)` ändern die URL nicht, aber beeinflussen welches Layout verwendet wird.**
+
+**Problem:**
+```
+app/page.tsx → "/" (Root Layout)
+app/(dashboard)/page.tsx → "/" (Dashboard Layout)
+```
+**Wenn beide existieren, wird `app/page.tsx` BEVORZUGT und das Dashboard-Layout wird NICHT verwendet!**
+
+**Lösung:**
+```
+app/page.tsx → redirect('/dashboard')
+app/(dashboard)/dashboard/page.tsx → Dashboard-Inhalt mit Layout
+```
+
+Oder alternativ:
+```
+app/page.tsx → Root-Inhalt (wenn gewünscht)
+app/(dashboard)/dashboard/page.tsx → Dashboard-Inhalt
+app/(dashboard)/layout.tsx → Dashboard Layout (nur für /dashboard/*)
+```
+
+#### Dateistruktur
+
+```
+app/
+├── page.tsx                    # Root → redirect('/dashboard')
+├── (auth)/
+│   ├── sign-in/
+│   │   └── page.tsx
+│   └── sign-up/
+│       └── page.tsx
+├── (dashboard)/
+│   ├── layout.tsx              # Dashboard Layout
+│   ├── dashboard/
+│   │   └── page.tsx            # Dashboard-Inhalt
+│   └── [feature]/
+│       └── page.tsx
+└── layout.tsx                  # Root Layout
+```
+
+#### ClerkProvider Konfiguration (GLOBAL)
+
+**WICHTIG:** `fallbackRedirectUrl` in der `<SignIn>` Komponente allein reicht NICHT für zuverlässige Redirects!
+
+```tsx
+// app/layout.tsx
+import { ClerkProvider } from '@clerk/nextjs';
+
+export default function RootLayout({ children }) {
+  return (
+    <ClerkProvider
+      afterSignInUrl="/dashboard"
+      afterSignUpUrl="/onboarding"
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/onboarding"
+    >
+      {children}
+    </ClerkProvider>
+  );
+}
+```
+
+**Regel:** Redirect-URLs IMMER GLOBAL im ClerkProvider setzen, nicht nur in den Sign-In/Sign-Up Komponenten!
+
+#### Standard Implementation
+
+```tsx
+// app/(auth)/sign-in/page.tsx
+'use client';
+
+import { SignIn } from '@clerk/nextjs';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useAuth } from '@clerk/nextjs';
+
+export default function SignInPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  
+  // Client-Side Fallback Redirect (wenn Middleware nicht greift)
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      const redirectUrl = searchParams.get('redirect_url') || '/dashboard';
+      router.replace(redirectUrl);
+    }
+  }, [isLoaded, isSignedIn, router, searchParams]);
+  
+  // Wenn bereits eingeloggt, zeige Loading (Middleware sollte redirecten)
+  if (isLoaded && isSignedIn) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div>Weiterleitung...</div>
+      </div>
+    );
+  }
+
+  // Redirect URL aus Query-Parameter oder Standard-Route
+  const redirectUrl = searchParams.get('redirect_url') || '/dashboard';
+  
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <SignIn
+        routing="path"
+        path="/sign-in"
+        signUpUrl="/sign-up"
+        afterSignInUrl={redirectUrl}
+        appearance={{
+          elements: {
+            rootBox: 'mx-auto',
+            card: 'shadow-lg',
+          },
+        }}
+      />
+    </div>
+  );
+}
+```
+
+```tsx
+// app/(auth)/sign-up/page.tsx
+'use client';
+
+import { SignUp } from '@clerk/nextjs';
+import { useSearchParams } from 'next/navigation';
+
+export default function SignUpPage() {
+  const searchParams = useSearchParams();
+  
+  // Nach Sign-Up zur Onboarding-Seite oder angegebene Route
+  const redirectUrl = searchParams.get('redirect_url') || '/onboarding';
+  
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <SignUp
+        routing="path"
+        path="/sign-up"
+        signInUrl="/sign-in"
+        afterSignUpUrl={redirectUrl}
+        appearance={{
+          elements: {
+            rootBox: 'mx-auto',
+            card: 'shadow-lg',
+          },
+        }}
+      />
+    </div>
+  );
+}
+```
+
+#### Regeln
+
+| ✅ RICHTIG | ❌ VERBOTEN |
+|------------|-------------|
+| `/sign-in` und `/sign-up` als Routen verwenden | Andere Pfade wie `/login` oder `/register` |
+| Clerk `<SignIn />` und `<SignUp />` Komponenten verwenden | Eigene Auth-Forms implementieren |
+| `afterSignInUrl` und `afterSignUpUrl` setzen | Ohne Redirect-Logik arbeiten |
+| Zentriertes Layout mit minimalem Styling | Komplexe Custom-Styles (nutze Clerk Appearance API) |
+
+### 3.7 Redirect-Logik nach Sign-In/Sign-Up
+
+**WICHTIG:** Alle Apps müssen konsistente Redirect-Flows implementieren.
+
+#### ⚠️ Redirect-Loop Prävention
+
+**Ursachen für Redirect-Loops:**
+
+1. **Race Conditions**: Server-Side `auth()` vs Client-Side `useAuth()` haben unterschiedliches Timing
+2. **Doppelte Redirects**: Middleware UND Komponenten machen Auth-Checks
+3. **Auth-State Abhängigkeit**: `isAuthenticated` wartet auf Backend-Daten statt Clerk-State
+
+**Best Practices:**
+
+**✅ DO: Middleware für ALLE Auth-Redirects**
+- Middleware ist server-side und läuft vor jeder Route
+- Siehe Abschnitt 3.1 für vollständige Implementation
+
+**✅ DO: Client-Side nur als Fallback**
+- Nur in Sign-In/Sign-Up Pages als Backup
+- Siehe Abschnitt 3.6 für Beispiel
+
+**❌ DON'T: Auth-Checks in Layout-Komponenten**
+
+```tsx
+// ❌ FALSCH - Führt zu Loops!
+function DashboardLayout({ children }) {
+  const { isSignedIn } = useAuth();
+  
+  if (!isSignedIn) {
+    router.push('/sign-in'); // ❌ NICHT MACHEN
+  }
+  
+  return <MojoShell>{children}</MojoShell>;
+}
+```
+
+```tsx
+// ✅ RICHTIG - Trust Middleware
+function DashboardLayout({ children }) {
+  const { isLoaded } = useAuth();
+  
+  // Nur Loading-State während Clerk lädt
+  if (!isLoaded) {
+    return <Loading />;
+  }
+  
+  // Middleware hat Auth bereits geprüft
+  return <MojoShell>{children}</MojoShell>;
+}
+```
+
+#### isAuthenticated Definition
+
+**Problem:** `isAuthenticated` basierte auf Backend-User-Daten, die noch laden.
+
+**Lösung:** Basiere `isAuthenticated` auf Clerk's `isSignedIn`, nicht auf Backend-Daten.
+
+```tsx
+// lib/auth-context.tsx
+import { useAuth as useClerkAuth } from '@clerk/nextjs';
+
+export function useAuth() {
+  const { isSignedIn, isLoaded: clerkLoaded, user: clerkUser } = useClerkAuth();
+  
+  return {
+    // ✅ Basiert auf Clerk's isSignedIn, nicht auf Backend-Daten
+    isAuthenticated: isSignedIn === true && clerkLoaded === true,
+    // Backend-Daten können im Hintergrund laden
+    user: clerkUser, // Kann null sein während isAuthenticated true ist
+    clerkLoaded,
+    isSignedIn,
+  };
+}
+```
+
+**Regel:** `isAuthenticated` = `isSignedIn && clerkLoaded`. Backend-Daten sind optional und können später laden.
+
+#### Standard Redirect-Flows
+
+```typescript
+// lib/auth-redirect.ts
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
+
+export function useAuthRedirect() {
+  const router = useRouter();
+  const { userId, orgId, isLoaded } = useAuth();
+
+  /**
+   * Bestimmt die Redirect-URL nach erfolgreichem Sign-In
+   */
+  function getRedirectUrlAfterSignIn(): string {
+    // 1. Prüfe Query-Parameter für explizite Redirect-URL
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get('redirect_url');
+      if (redirectUrl && redirectUrl.startsWith('/')) {
+        return redirectUrl;
+      }
+    }
+
+    // 2. Wenn User bereits Teil einer Organization ist → Dashboard
+    if (orgId) {
+      return '/';
+    }
+
+    // 3. Wenn User keine Organization hat → Onboarding/Org-Auswahl
+    return '/onboarding';
+  }
+
+  /**
+   * Bestimmt die Redirect-URL nach erfolgreichem Sign-Up
+   */
+  function getRedirectUrlAfterSignUp(): string {
+    // Immer zum Onboarding für neue User
+    return '/onboarding';
+  }
+
+  return {
+    getRedirectUrlAfterSignIn,
+    getRedirectUrlAfterSignUp,
+  };
+}
+```
+
+#### Redirect-Prioritäten (nach Sign-In)
+
+1. **Query-Parameter `redirect_url`** (höchste Priorität)
+   - Erlaubt explizite Redirects z.B. von Deep-Links
+   - Beispiel: `/sign-in?redirect_url=/contacts/123`
+
+2. **Aktive Organization** (`orgId` vorhanden)
+   - Redirect zum Dashboard der App (`/`)
+   - User ist bereits Teil einer Organisation
+
+3. **Keine Organization** (Fallback)
+   - Redirect zum Onboarding (`/onboarding`)
+   - User muss Organisation erstellen oder beitreten
+
+#### Redirect-Prioritäten (nach Sign-Up)
+
+1. **Immer Onboarding**
+   - Neue User werden IMMER zu `/onboarding` weitergeleitet
+   - Ausnahme: `redirect_url` Query-Parameter (für spezielle Flows)
+
+2. **Onboarding-Flow**
+   ```
+   Sign-Up → /onboarding → (Organisation erstellen oder beitreten) → Dashboard
+   ```
+
+#### Empfohlene Architektur
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Middleware                          │
+│  - ALLE Auth-Redirects                                  │
+│  - Server-Side, zuverlässig                             │
+│  - Eingeloggt + auf Sign-In → Dashboard                │
+│  - Nicht eingeloggt + protected → Sign-In              │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                   ClerkProvider                         │
+│  - afterSignInUrl, afterSignUpUrl                      │
+│  - Global Redirect-Konfiguration                       │
+│  - Fallback-Redirects                                  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Sign-In Page                          │
+│  - Client-Side Fallback (router.replace)               │
+│  - NUR wenn Middleware nicht greift                    │
+│  - Zeigt Loading wenn bereits eingeloggt               │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                 DashboardLayout                         │
+│  - KEINE Auth-Redirects!                               │
+│  - Nur Loading-State während Clerk lädt                │
+│  - Trust Middleware                                    │
+│  - isAuthenticated = isSignedIn && clerkLoaded         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Regeln:**
+1. ✅ Middleware = einzige Quelle für Auth-Redirects
+2. ✅ ClerkProvider = globale Redirect-Konfiguration
+3. ✅ Sign-In Page = nur Client-Side Fallback
+4. ✅ Layouts = keine Auth-Redirects, nur Loading-States
+
+### 3.8 Sign-Out Implementation
+
+```tsx
+// components/auth/sign-out-button.tsx
+'use client';
+
+import { useClerk } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
+import { Button } from '@gkeferstein/design';
+
+export function SignOutButton() {
+  const { signOut } = useClerk();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await signOut({
+      redirectUrl: '/',
+    });
+    router.push('/');
+  };
+
+  return (
+    <Button variant="ghost" onClick={handleSignOut}>
+      Abmelden
+    </Button>
+  );
+}
+```
+
+**Regeln:**
+- Sign-Out redirectet IMMER zur Startseite (`/`) oder zur Sign-In-Seite
+- Keine Redirect-URL Parameter bei Sign-Out (Sicherheit)
+
+### 3.9 Neue User & Organizations (Onboarding Flow)
+
+**WICHTIG:** Wenn ein neuer User oder eine neue Organization erstellt wird, müssen entsprechende Tenants angelegt werden.
+
+#### Webhook-Handler für neue User
+
+```typescript
+// app/api/webhooks/clerk/route.ts
+import { Webhook } from 'svix';
+import type { WebhookEvent } from '@clerk/nextjs/server';
+import { headers } from 'next/headers';
+import { createPersonalTenant } from '@/lib/tenant-service';
+
+const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET!;
+
+export async function POST(req: Request) {
+  const payload = await req.text();
+  const headerPayload = await headers();
+  
+  const headersList = {
+    'svix-id': headerPayload.get('svix-id')!,
+    'svix-timestamp': headerPayload.get('svix-timestamp')!,
+    'svix-signature': headerPayload.get('svix-signature')!,
+  };
+
+  const wh = new Webhook(WEBHOOK_SECRET);
+  const evt = wh.verify(payload, headersList) as WebhookEvent;
+
+  switch (evt.type) {
+    case 'user.created':
+      await handleUserCreated(evt.data);
+      break;
+    
+    case 'organization.created':
+      await handleOrganizationCreated(evt.data);
+      break;
+    
+    case 'organizationMembership.created':
+      await handleOrganizationMembershipCreated(evt.data);
+      break;
+  }
+
+  return new Response('OK', { status: 200 });
+}
+
+/**
+ * Neuer User wurde erstellt
+ * → Persönlichen Tenant anlegen
+ */
+async function handleUserCreated(data: any) {
+  const userId = data.id;
+  const email = data.email_addresses[0]?.email_address;
+  const firstName = data.first_name;
+  const lastName = data.last_name;
+
+  // Persönlichen Tenant für User anlegen
+  await createPersonalTenant({
+    clerkUserId: userId,
+    email,
+    name: `${firstName} ${lastName}`.trim() || 'Persönliches Konto',
+  });
+}
+
+/**
+ * Neue Organization wurde erstellt
+ * → Tenant für Organization anlegen
+ */
+async function handleOrganizationCreated(data: any) {
+  const orgId = data.id;
+  const orgName = data.name;
+  const clerkUserId = data.created_by; // Owner User ID
+
+  // Tenant für Organization anlegen
+  await createOrganizationTenant({
+    clerkOrgId: orgId,
+    name: orgName,
+    ownerUserId: clerkUserId,
+  });
+}
+
+/**
+ * User wurde zu Organization hinzugefügt
+ * → Optional: Berechtigungen synchronisieren
+ */
+async function handleOrganizationMembershipCreated(data: any) {
+  const userId = data.public_user_data.user_id;
+  const orgId = data.organization.id;
+  const role = data.role; // 'org:admin' | 'org:member' | etc.
+
+  // Optional: Rollen in eigener Datenbank synchronisieren
+  // await syncOrganizationMembership(userId, orgId, role);
+}
+```
+
+#### Tenant-Service Implementation
+
+```typescript
+// lib/tenant-service.ts
+import { prisma } from '@/lib/db';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Erstellt einen persönlichen Tenant für einen neuen User
+ */
+export async function createPersonalTenant(data: {
+  clerkUserId: string;
+  email: string;
+  name: string;
+}) {
+  // Prüfe ob bereits existiert
+  const existing = await prisma.tenant.findFirst({
+    where: {
+      metadata: {
+        path: ['clerkUserId'],
+        equals: data.clerkUserId,
+      },
+      isPersonal: true,
+    },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  // Slug aus E-Mail generieren
+  const slug = generateSlugFromEmail(data.email);
+
+  // Tenant anlegen
+  const tenant = await prisma.tenant.create({
+    data: {
+      id: uuidv4(),
+      slug,
+      name: data.name,
+      isPersonal: true,
+      status: 'active',
+      metadata: {
+        clerkUserId: data.clerkUserId,
+        email: data.email,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  return tenant;
+}
+
+/**
+ * Erstellt einen Tenant für eine Organization
+ */
+export async function createOrganizationTenant(data: {
+  clerkOrgId: string;
+  name: string;
+  ownerUserId: string;
+}) {
+  // Prüfe ob bereits existiert
+  const existing = await prisma.tenant.findFirst({
+    where: {
+      clerkOrgId: data.clerkOrgId,
+    },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  // Slug aus Name generieren
+  const slug = generateSlugFromName(data.name);
+
+  // Tenant anlegen
+  const tenant = await prisma.tenant.create({
+    data: {
+      id: uuidv4(),
+      slug,
+      name: data.name,
+      clerkOrgId: data.clerkOrgId,
+      isPersonal: false,
+      status: 'active',
+      metadata: {
+        ownerUserId: data.ownerUserId,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+
+  return tenant;
+}
+
+function generateSlugFromEmail(email: string): string {
+  const base = email.split('@')[0].toLowerCase();
+  return base.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+}
+
+function generateSlugFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .substring(0, 63);
+}
+```
+
+#### Onboarding-Seite (nach Sign-Up)
+
+```tsx
+// app/onboarding/page.tsx
+'use client';
+
+import { useAuth } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@gkeferstein/design';
+
+export default function OnboardingPage() {
+  const { userId, orgId, isLoaded } = useAuth();
+  const router = useRouter();
+  const [organizations, setOrganizations] = useState([]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    // Wenn bereits in Organization → direkt zum Dashboard
+    if (orgId) {
+      router.push('/');
+      return;
+    }
+
+    // Lade verfügbare Organizations
+    // loadOrganizations();
+  }, [isLoaded, orgId, router]);
+
+  const handleCreateOrganization = () => {
+    router.push('/organizations/new');
+  };
+
+  const handleJoinOrganization = () => {
+    router.push('/organizations/join');
+  };
+
+  return (
+    <div className="container mx-auto py-12 max-w-2xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>Willkommen bei MOJO</CardTitle>
+          <CardDescription>
+            Bitte wähle, ob du eine neue Organisation erstellen oder einer bestehenden beitreten möchtest.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={handleCreateOrganization} className="w-full">
+            Neue Organisation erstellen
+          </Button>
+          <Button onClick={handleJoinOrganization} variant="outline" className="w-full">
+            Organisation beitreten
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+#### Flow-Diagramm: Neuer User
+
+```
+1. User registriert sich
+   ↓
+2. Clerk Webhook: user.created
+   ↓
+3. Tenant-Service: Persönlicher Tenant wird angelegt
+   ↓
+4. Redirect: /onboarding
+   ↓
+5. User wählt: Organisation erstellen ODER beitreten
+   ↓
+6a. Organisation erstellen → clerkOrgId wird angelegt → Tenant für Org angelegt → Redirect: /dashboard
+6b. Organisation beitreten → Mitgliedschaft erstellt → Redirect: /dashboard
+```
+
+#### Flow-Diagramm: Neue Organization
+
+```
+1. User erstellt Organisation in Clerk
+   ↓
+2. Clerk Webhook: organization.created
+   ↓
+3. Tenant-Service: Tenant für Organisation wird angelegt (mit clerkOrgId)
+   ↓
+4. Automatischer Redirect: /dashboard (mit orgId im Session)
+```
+
+### 3.10 Debugging Checklist für Auth-Probleme
+
+**Bei Redirect-Loops prüfen:**
+
+- [ ] **Route Groups**: Gibt es `app/page.tsx` UND `app/(dashboard)/page.tsx`?
+  - Lösung: `app/page.tsx` → `redirect('/dashboard')`
+- [ ] **ClerkProvider**: Ist `afterSignInUrl` im ClerkProvider gesetzt?
+  - Lösung: Redirect-URLs GLOBAL im ClerkProvider konfigurieren
+- [ ] **Mehrfache Redirects**: Machen mehrere Komponenten Auth-Redirects?
+  - Lösung: NUR Middleware macht Redirects, Layouts prüfen nur Loading
+- [ ] **Auth-State**: Basiert `isAuthenticated` auf Clerk oder Backend?
+  - Lösung: `isAuthenticated = isSignedIn && clerkLoaded`
+
+**Clerk Console Messages:**
+
+| Message | Bedeutung | Lösung |
+|---------|-----------|--------|
+| `"SignIn cannot render when user is already signed in"` | User ist eingeloggt, Redirect fehlt | Middleware sollte eingeloggte User von `/sign-in` redirecten |
+| `"redirecting to afterSignIn URL"` | Clerk versucht Redirect | Prüfe URL-Konfiguration in ClerkProvider |
+| `"JWT cannot be used prior to not before date claim (nbf)"` | Clock Skew Problem | `clockSkewInMs: 60000` beim Token-Verify setzen |
+
+**Weitere Erkenntnisse:**
+
+| Thema | Learning |
+|-------|----------|
+| **Knex.js** | In neueren Versionen ist `db.destroy` read-only, nicht überschreibbar |
+| **Port-Konflikte** | Immer prüfen ob Backend/Frontend Ports belegt sind vor dem Start |
+| **Auto-Tenant** | Bei Clerk Org IDs (`org_...`) Tenant automatisch erstellen wenn nicht vorhanden |
+| **Database Migrations** | Manuelles Migration-Script als Fallback wenn Knex CLI fehlschlägt |
+
 ---
 
 ## 4. Multitenancy
 
-### 3.1 Shared Package
+### 4.1 Shared Package
 
 Alle Apps MÜSSEN `@mojo/tenant` verwenden:
 
@@ -703,7 +1477,7 @@ Alle Apps MÜSSEN `@mojo/tenant` verwenden:
 pnpm add @mojo/tenant
 ```
 
-### 3.2 Standard Headers
+### 4.2 Standard Headers
 
 | Header | Beschreibung | Beispiel |
 |--------|-------------|----------|
@@ -711,7 +1485,7 @@ pnpm add @mojo/tenant
 | `x-tenant-slug` | Slug des Tenants | `acme-corp` |
 | `x-service-name` | Name des aufrufenden Services | `kontakte-api` |
 
-### 3.3 Tenant Model (Prisma)
+### 4.3 Tenant Model (Prisma)
 
 ```prisma
 model Tenant {
@@ -728,7 +1502,7 @@ model Tenant {
 }
 ```
 
-### 3.4 Tenant Model (Knex)
+### 4.4 Tenant Model (Knex)
 
 ```typescript
 interface Tenant {
@@ -743,7 +1517,7 @@ interface Tenant {
 }
 ```
 
-### 3.5 Service-to-Service Calls
+### 4.5 Service-to-Service Calls
 
 ```typescript
 // Immer Tenant-Context mitsenden
@@ -758,7 +1532,7 @@ async function callExternalService(endpoint: string, tenantId: string) {
 }
 ```
 
-### 3.6 Tenant Middleware (Fastify)
+### 4.6 Tenant Middleware (Fastify)
 
 ```typescript
 import { createFastifyTenantMiddleware } from '@mojo/tenant';
@@ -776,7 +1550,7 @@ fastify.get('/data', async (request) => {
 });
 ```
 
-### 3.7 Tenant Middleware (Express)
+### 4.7 Tenant Middleware (Express)
 
 ```typescript
 import { createExpressTenantMiddleware } from '@mojo/tenant';
@@ -798,7 +1572,7 @@ app.get('/data', (req, res) => {
 
 ## 5. API Standards
 
-### 4.1 Response Format
+### 5.1 Response Format
 
 ```typescript
 // Success Response
@@ -824,7 +1598,7 @@ interface ErrorResponse {
 }
 ```
 
-### 4.2 Standard Error Codes
+### 5.2 Standard Error Codes
 
 | Code | HTTP Status | Beschreibung |
 |------|-------------|-------------|
@@ -837,7 +1611,7 @@ interface ErrorResponse {
 | `INTERNAL_ERROR` | 500 | Interner Serverfehler |
 | `SERVICE_UNAVAILABLE` | 503 | Service nicht verfügbar |
 
-### 4.3 Pagination
+### 5.3 Pagination
 
 ```typescript
 // Request Query Parameter
@@ -868,7 +1642,7 @@ interface PaginationMeta {
 }
 ```
 
-### 4.4 Validation Errors
+### 5.4 Validation Errors
 
 ```typescript
 // Validation Error Response
@@ -887,7 +1661,7 @@ interface PaginationMeta {
 }
 ```
 
-### 4.5 API Pfade
+### 5.5 API Pfade
 
 ```
 /api/contacts
@@ -1980,6 +2754,7 @@ fi
 
 | Version | Datum | Änderungen |
 |---------|-------|-----------|
+| 1.6.0 | 01.01.2026 | Sign-In/Sign-Up Standards hinzugefügt: Standard-Implementation, Redirect-Logik, Onboarding-Flows, Redirect-Loop Prävention, Debugging Checklist, Next.js Route Groups, ClerkProvider Konfiguration, JWT Clock Skew |
 | 1.5.0 | 01.01.2026 | CI/CD komplett überarbeitet: Neue Secrets-Konvention, Image-Naming, Version-Sync, Health Checks für Basic Auth |
 | 1.4.0 | 29.12.2025 | Service URLs konsolidiert, API-Pfade vereinheitlicht (ohne /v1), manage.mojo entfernt |
 | 1.3.0 | 29.12.2025 | Design System & Navigation Standards hinzugefügt (design.mojo Integration) |
