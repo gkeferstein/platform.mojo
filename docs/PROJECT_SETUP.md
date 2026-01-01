@@ -40,6 +40,12 @@ Das Script erstellt automatisch:
 - `.cursorrules` für Cursor AI
 - Health Check Endpoint (`/health`)
 - `README.md` mit Projekt-Dokumentation
+- `SETUP.md` mit Schnellstart-Anleitung (inkl. `platform.mojo` Setup)
+
+**WICHTIG:** Nach der Erstellung musst du `SETUP.md` und `README.md` an die App anpassen. Siehe [Repository-Struktur Anforderungen](./REPOSITORY_STRUCTURE.md) für Details.
+- `SETUP.md` mit Schnellstart-Anleitung (inkl. `platform.mojo` Setup)
+
+**WICHTIG:** Nach der Erstellung musst du `SETUP.md` und `README.md` an die App anpassen. Siehe [Repository-Struktur Anforderungen](./REPOSITORY_STRUCTURE.md) für Details.
 
 ### Manuell
 
@@ -356,6 +362,18 @@ docker logs mojo-traefik --tail 50
 - **Coding Standards:** `platform.mojo/docs/CODING_STANDARDS.md`
 - **Staging Konvention:** `platform.mojo/docs/STAGING_SERVER_CONVENTION.md`
 - **Projekt-Template:** `platform.mojo/templates/.project-template/`
+
+---
+
+## Dokumentations-Anforderungen
+
+**WICHTIG:** Jede neue App MUSS eine bestimmte Dokumentations-Struktur haben.
+
+Siehe [Repository-Struktur Anforderungen](./REPOSITORY_STRUCTURE.md) für Details:
+- ✅ `SETUP.md` (PFLICHT) - Schnellstart für neue Entwickler
+- ✅ `README.md` (PFLICHT) - Vollständige Dokumentation mit Repository-Setup
+- ✅ Verweise auf `platform.mojo` (PFLICHT)
+- ✅ Lokale UND GitHub-Links für zentrale Dokumentation
 
 ---
 

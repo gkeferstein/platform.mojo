@@ -278,9 +278,9 @@ Für komplette lokale Entwicklung mit mehreren Services:
 | messaging.mojo | 3002 | `cd messaging.mojo && npm run dev` |
 | campus.mojo | 3003 | `cd campus.mojo && npm run dev` |
 
-### Mit docker-compose.local.yml (optional)
+### Mit Docker Compose (optional)
 
-Falls du doch Docker für lokale Services nutzen möchtest:
+Falls du Docker für lokale Services nutzen möchtest:
 
 ```yaml
 # docker-compose.local.yml
@@ -306,6 +306,164 @@ volumes:
 ```bash
 docker compose -f docker-compose.local.yml up -d
 ```
+
+### Mit lokalem Traefik (empfohlen für Multi-Service-Entwicklung)
+
+Für saubere lokale Entwicklung ohne Portkonflikte kannst du ein lokales Traefik-Setup verwenden:
+
+**Vorteile:**
+- ✅ Keine Portkonflikte – alle Services laufen intern, Traefik routet über Port 80
+- ✅ Saubere URLs – `localhost` statt `localhost:3000`
+- ✅ Komplett isoliert – keine Auswirkungen auf Staging/Prod
+- ✅ Traefik Dashboard – Übersicht über alle Routen
+
+**Setup:**
+
+1. **docker-compose.local.yml** erstellen (siehe Beispiel unten)
+2. **traefik.local.yml** erstellen (siehe Beispiel unten)
+3. Services starten:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+```
+
+**Verfügbare URLs:**
+- Frontend: http://localhost
+- API: http://api.localhost/api
+- Health: http://api.localhost/health
+- Traefik Dashboard: http://localhost:8080/dashboard/
+
+**Beispiel docker-compose.local.yml:**
+
+```yaml
+# Docker Compose - Lokale Entwicklung mit Traefik
+# Verwendung: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+services:
+  # Lokales Traefik für Development
+  traefik:
+    image: traefik:v2.11
+    container_name: {app}-traefik-local
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"  # Nur für lokale Entwicklung!
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=mojo-local-network"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"      # HTTP
+      - "8080:8080"  # Traefik Dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.local.yml:/etc/traefik/traefik.yml:ro
+    networks:
+      - mojo-local-network
+    restart: unless-stopped
+
+  # Backend Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {app}-backend-local
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      APP_ENV: local
+    expose:
+      - "3000"
+    networks:
+      - mojo-local-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mojo-local-network"
+      - "traefik.http.routers.{app}-api-local.rule=Host(`api.localhost`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.{app}-api-local.entrypoints=web"
+      - "traefik.http.routers.{app}-api-local.service={app}-api-local"
+      - "traefik.http.routers.{app}-api-local.priority=10"
+      - "traefik.http.routers.{app}-health-local.rule=Host(`api.localhost`) && Path(`/health`)"
+      - "traefik.http.routers.{app}-health-local.entrypoints=web"
+      - "traefik.http.routers.{app}-health-local.service={app}-api-local"
+      - "traefik.http.routers.{app}-health-local.priority=20"
+      - "traefik.http.services.{app}-api-local.loadbalancer.server.port=3000"
+
+  # Frontend Service (falls vorhanden)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {app}-frontend-local
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+    expose:
+      - "3000"
+    networks:
+      - mojo-local-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mojo-local-network"
+      - "traefik.http.routers.{app}-frontend-local.rule=Host(`localhost`) && !PathPrefix(`/api`) && !Path(`/health`)"
+      - "traefik.http.routers.{app}-frontend-local.entrypoints=web"
+      - "traefik.http.routers.{app}-frontend-local.service={app}-frontend-local"
+      - "traefik.http.routers.{app}-frontend-local.priority=1"
+      - "traefik.http.services.{app}-frontend-local.loadbalancer.server.port=3000"
+
+networks:
+  mojo-local-network:
+    name: mojo-local-network
+    driver: bridge
+    # WICHTIG: Kein external: true - komplett isoliertes lokales Netzwerk
+```
+
+**Beispiel traefik.local.yml:**
+
+```yaml
+# Traefik Konfiguration für lokale Entwicklung
+api:
+  dashboard: true
+  insecure: true  # Nur für lokale Entwicklung - Dashboard ohne Auth
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: mojo-local-network
+    watch: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+log:
+  level: INFO
+  filePath: ""
+
+accessLog: {}
+```
+
+**WICHTIG:**
+- Dieses Setup ist komplett isoliert von Staging/Prod
+- Eigene Docker-Netzwerke (`mojo-local-network`)
+- Lokale Domains (`localhost`, `api.localhost`)
+- Keine Verbindung zu externen Netzwerken
+- Keine Auswirkungen auf Staging/Prod
+
+**Troubleshooting:**
+
+Falls Port 80 bereits belegt ist, passe die Ports in `docker-compose.local.yml` an:
+
+```yaml
+traefik:
+  ports:
+    - "8080:80"      # HTTP auf Port 8080
+    - "8081:8080"    # Dashboard auf Port 8081
+```
+
+Dann URLs entsprechend anpassen: `http://localhost:8080` statt `http://localhost`
 
 ---
 
