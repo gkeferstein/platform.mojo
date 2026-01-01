@@ -1,0 +1,75 @@
+{
+  "name": "@gkeferstein/tenant",
+  "version": "1.0.0",
+  "description": "Unified tenant middleware and types for MOJO microservices",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gkeferstein/platform.mojo.git",
+    "directory": "packages/tenant"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./fastify": {
+      "types": "./dist/middleware/fastify-tenant.d.ts",
+      "import": "./dist/middleware/fastify-tenant.mjs",
+      "require": "./dist/middleware/fastify-tenant.js"
+    },
+    "./express": {
+      "types": "./dist/middleware/express-tenant.d.ts",
+      "import": "./dist/middleware/express-tenant.mjs",
+      "require": "./dist/middleware/express-tenant.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "prepare": "npm run build",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "fastify-plugin": "^4.5.0"
+  },
+  "peerDependencies": {
+    "fastify": "^4.0.0",
+    "express": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "fastify": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "fastify": "^4.25.0",
+    "express": "^4.18.2",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mojo",
+    "tenant",
+    "multitenancy",
+    "middleware"
+  ],
+  "license": "UNLICENSED"
+}
+

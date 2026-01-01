@@ -1,0 +1,208 @@
+# CI/CD Pipeline für Staging
+# Trigger: Push zu main Branch
+# Ziel: Staging Server ({app}.staging.mojo-institut.de)
+
+name: CI/CD Staging
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ============================================
+  # Test & Build
+  # ============================================
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Configure npm for GitHub Packages
+        run: |
+          echo "@gkeferstein:registry=https://npm.pkg.github.com" > ~/.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GHCR_TOKEN }}" >> ~/.npmrc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint || echo "No lint script"
+        continue-on-error: true
+
+      - name: Run tests
+        run: npm test || echo "No test script"
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build || echo "No build script"
+
+  # ============================================
+  # Build & Push Docker Image
+  # ============================================
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version" 2>/dev/null || echo "1.0.0")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=main-latest
+            type=raw,value=${{ steps.version.outputs.version }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NPM_TOKEN=${{ secrets.GHCR_TOKEN }}
+
+  # ============================================
+  # Deploy to Staging
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-image
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.STAGING_SERVER }}" ]; then
+            echo "❌ STAGING_SERVER Secret nicht gesetzt!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.STAGING_SSH_KEY }}" ]; then
+            echo "❌ STAGING_SSH_KEY Secret nicht gesetzt!"
+            exit 1
+          fi
+
+      - name: Deploy to Staging
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          VERSION: ${{ needs.build-image.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.STAGING_SERVER }}
+          username: root
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: VERSION,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            
+            APP_NAME="${{ github.event.repository.name }}"
+            PROJECT_DIR="/root/projects/${APP_NAME}"
+            
+            echo "🚀 Deploying ${APP_NAME} to Staging..."
+            
+            # Ensure project directory exists
+            mkdir -p "$PROJECT_DIR"
+            cd "$PROJECT_DIR"
+            
+            # Clone/update repository
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Login to GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Set version in environment
+            echo "VERSION=${VERSION}" > .env.staging
+            
+            # Pull new images
+            docker compose -f docker-compose.staging.yml pull || true
+            
+            # Deploy with docker compose
+            docker compose -f docker-compose.staging.yml down || true
+            docker compose -f docker-compose.staging.yml up -d
+            
+            echo "✅ Staging deployment complete!"
+
+      - name: Health Check
+        run: |
+          echo "⏳ Waiting for deployment to stabilize..."
+          sleep 30
+          
+          APP_NAME="${{ github.event.repository.name }}"
+          SERVICE_NAME=$(echo "$APP_NAME" | sed 's/\.mojo$//' | sed 's/-mojo$//')
+          HEALTH_URL="https://${SERVICE_NAME}.staging.mojo-institut.de/health"
+          
+          MAX_RETRIES=10
+          RETRY_DELAY=10
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+            
+            # Accept 200 (success) or 401 (Basic Auth protected)
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+              echo "✅ Health Check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            
+            echo "⚠️ Health Check failed (HTTP $HTTP_CODE), retry $i/$MAX_RETRIES..."
+            sleep $RETRY_DELAY
+          done
+          
+          echo "❌ Health Check failed after $MAX_RETRIES attempts"
+          exit 1
+

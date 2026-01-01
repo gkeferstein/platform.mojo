@@ -1,0 +1,40 @@
+# Docker Compose für Production
+# Domain: {SERVICE_NAME}.mojo-institut.de
+# Basic Auth: DEAKTIVIERT (nur Clerk Auth)
+
+services:
+  app:
+    image: ghcr.io/gkeferstein/{APP_NAME}-api:${VERSION:-latest}
+    container_name: {APP_NAME}-production
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SERVICE_NAME={SERVICE_NAME}
+    env_file:
+      - .env.production
+    expose:
+      - "3000"
+    networks:
+      - mojo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mojo-network"
+      
+      # Production Route: {SERVICE_NAME}.mojo-institut.de
+      - "traefik.http.routers.{SERVICE_NAME}-prod.rule=Host(`{SERVICE_NAME}.mojo-institut.de`)"
+      - "traefik.http.routers.{SERVICE_NAME}-prod.entrypoints=websecure"
+      - "traefik.http.routers.{SERVICE_NAME}-prod.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{SERVICE_NAME}-prod.service={SERVICE_NAME}-prod"
+      - "traefik.http.services.{SERVICE_NAME}-prod.loadbalancer.server.port=3000"
+
+networks:
+  mojo-network:
+    external: true
+

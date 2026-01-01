@@ -1,0 +1,41 @@
+# Docker Compose für Staging
+# Domain: {SERVICE_NAME}.staging.mojo-institut.de
+# Basic Auth: Aktiviert via Traefik Middleware
+
+services:
+  app:
+    image: ghcr.io/gkeferstein/{APP_NAME}-api:${VERSION:-main-latest}
+    container_name: {APP_NAME}-staging
+    environment:
+      - NODE_ENV=staging
+      - PORT=3000
+      - SERVICE_NAME={SERVICE_NAME}
+    env_file:
+      - .env.staging
+    expose:
+      - "3000"
+    networks:
+      - mojo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=mojo-network"
+      
+      # Staging Route: {SERVICE_NAME}.staging.mojo-institut.de
+      - "traefik.http.routers.{SERVICE_NAME}-staging.rule=Host(`{SERVICE_NAME}.staging.mojo-institut.de`)"
+      - "traefik.http.routers.{SERVICE_NAME}-staging.entrypoints=websecure"
+      - "traefik.http.routers.{SERVICE_NAME}-staging.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{SERVICE_NAME}-staging.middlewares=staging-basicauth@file,staging-headers@file"
+      - "traefik.http.routers.{SERVICE_NAME}-staging.service={SERVICE_NAME}-staging"
+      - "traefik.http.services.{SERVICE_NAME}-staging.loadbalancer.server.port=3000"
+
+networks:
+  mojo-network:
+    external: true
+

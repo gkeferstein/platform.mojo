@@ -1,0 +1,48 @@
+# {APP_NAME} - Cursor Rules
+
+## Projekt-Kontext
+
+Dieses Projekt ist Teil des MOJO-Ökosystems.
+
+## URLs
+
+- **Staging:** https://{SERVICE_NAME}.staging.mojo-institut.de
+- **Production:** https://{SERVICE_NAME}.mojo-institut.de
+
+## Standards
+
+- **Platform Dokumentation:** /root/projects/platform.mojo/docs/
+- **Ökosystem-Doku:** /root/projects/platform.mojo/docs/MOJO_ECOSYSTEM.md
+- **Coding Standards:** /root/projects/platform.mojo/docs/CODING_STANDARDS.md
+- **Design System:** `@gkeferstein/design` Package verwenden
+
+## Code-Prinzipien
+
+- TypeScript ES6+ mit striktem Typing
+- DRY - Keine Code-Duplikation
+- Einfachheit vor Komplexität
+- Health Check Endpoint ist PFLICHT (`/health`)
+
+## Deployment
+
+- Docker + Traefik für Routing
+- CI/CD über GitHub Actions
+- Push zu `main` → Staging
+- Release Tag `v*.*.*` → Production
+
+## GitHub Secrets (PFLICHT!)
+
+- `STAGING_SERVER` - Staging Server
+- `STAGING_SSH_KEY` - SSH Key für Staging
+- `PRODUCTION_SERVER` - Production Server
+- `PRODUCTION_SSH_KEY` - SSH Key für Production
+- `GHCR_TOKEN` - GitHub Container Registry
+
+## MOJO-Terminologie
+
+Verwende die MOJO-Sprache (siehe /root/projects/platform.mojo/docs/brand/MOJO_GLOSSARY.md):
+- "Freischalten" statt "Kaufen"
+- "Level" für Fortschrittsstufen
+- "Transformation" für die User Journey
+- Immer positiv formulieren
+

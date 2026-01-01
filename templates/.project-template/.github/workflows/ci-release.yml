@@ -1,0 +1,316 @@
+# CI/CD Pipeline für Production Release
+# Trigger: Release Tag (v*.*.*)
+# Strategie: Build Once, Deploy Many (gleiche Images wie Staging)
+
+name: Release to Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., v1.2.3)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ============================================
+  # Prepare Release
+  # ============================================
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix if present
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Release version: $VERSION"
+
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z (e.g., 1.2.3)"
+            exit 1
+          fi
+          echo "✅ Version format valid: $VERSION"
+
+  # ============================================
+  # Build Image (if not exists)
+  # ============================================
+  build-image:
+    name: Build Image (if needed)
+    runs-on: ubuntu-latest
+    needs: prepare
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Check if image exists
+        id: check
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:${{ needs.prepare.outputs.version }}"
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Image already exists: $IMAGE"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "📦 Image does not exist, will build: $IMAGE"
+          fi
+
+      - name: Extract metadata
+        if: steps.check.outputs.exists != 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push
+        if: steps.check.outputs.exists != 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NPM_TOKEN=${{ secrets.GHCR_TOKEN }}
+
+  # ============================================
+  # Deploy to Staging (Validation)
+  # ============================================
+  deploy-staging:
+    name: Deploy to Staging (Validation)
+    runs-on: ubuntu-latest
+    needs: [prepare, build-image]
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.STAGING_SERVER }}" ]; then
+            echo "❌ STAGING_SERVER Secret nicht gesetzt!"
+            exit 1
+          fi
+
+      - name: Deploy to Staging
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.STAGING_SERVER }}
+          username: root
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: VERSION,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            
+            APP_NAME="${{ github.event.repository.name }}"
+            PROJECT_DIR="/root/projects/${APP_NAME}"
+            
+            echo "🚀 Deploying ${APP_NAME} v${VERSION} to Staging for validation..."
+            
+            cd "$PROJECT_DIR"
+            
+            # Login to GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Set version
+            echo "VERSION=${VERSION}" > .env.staging
+            
+            # Pull and deploy
+            docker compose -f docker-compose.staging.yml pull
+            docker compose -f docker-compose.staging.yml down || true
+            docker compose -f docker-compose.staging.yml up -d
+            
+            echo "✅ Staging validation deployment complete!"
+
+      - name: Staging Health Check
+        run: |
+          echo "⏳ Waiting for staging deployment..."
+          sleep 30
+          
+          APP_NAME="${{ github.event.repository.name }}"
+          SERVICE_NAME=$(echo "$APP_NAME" | sed 's/\.mojo$//' | sed 's/-mojo$//')
+          HEALTH_URL="https://${SERVICE_NAME}.staging.mojo-institut.de/health"
+          
+          MAX_RETRIES=10
+          RETRY_DELAY=10
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+              echo "✅ Staging Health Check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            
+            echo "⚠️ Staging Health Check failed (HTTP $HTTP_CODE), retry $i/$MAX_RETRIES..."
+            sleep $RETRY_DELAY
+          done
+          
+          echo "❌ Staging Health Check failed"
+          exit 1
+
+  # ============================================
+  # Deploy to Production
+  # ============================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-staging]
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.PRODUCTION_SERVER }}" ]; then
+            echo "❌ PRODUCTION_SERVER Secret nicht gesetzt!"
+            exit 1
+          fi
+
+      - name: Deploy to Production
+        uses: appleboy/ssh-action@v1.0.0
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        with:
+          host: ${{ secrets.PRODUCTION_SERVER }}
+          username: root
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: VERSION,GHCR_TOKEN
+          script: |
+            set -euo pipefail
+            
+            APP_NAME="${{ github.event.repository.name }}"
+            PROJECT_DIR="/root/projects/${APP_NAME}"
+            
+            echo "🚀 Deploying ${APP_NAME} v${VERSION} to Production..."
+            
+            # Ensure project directory exists
+            mkdir -p "$PROJECT_DIR"
+            cd "$PROJECT_DIR"
+            
+            # Clone/update repository
+            if [ -d ".git" ]; then
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Login to GHCR
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Set version
+            echo "VERSION=${VERSION}" > .env.production
+            
+            # Pull SAME images as staging (Build Once, Deploy Many)
+            docker compose -f docker-compose.production.yml pull
+            docker compose -f docker-compose.production.yml down || true
+            docker compose -f docker-compose.production.yml up -d
+            
+            echo "✅ Production deployment complete!"
+
+      - name: Production Health Check
+        run: |
+          echo "⏳ Waiting for production deployment..."
+          sleep 30
+          
+          APP_NAME="${{ github.event.repository.name }}"
+          SERVICE_NAME=$(echo "$APP_NAME" | sed 's/\.mojo$//' | sed 's/-mojo$//')
+          HEALTH_URL="https://${SERVICE_NAME}.mojo-institut.de/health"
+          
+          MAX_RETRIES=10
+          RETRY_DELAY=10
+          
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_URL" || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Production Health Check passed (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+            
+            echo "⚠️ Production Health Check failed (HTTP $HTTP_CODE), retry $i/$MAX_RETRIES..."
+            sleep $RETRY_DELAY
+          done
+          
+          echo "❌ Production Health Check failed"
+          exit 1
+
+  # ============================================
+  # Create GitHub Release
+  # ============================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-production]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: Release v${{ needs.prepare.outputs.version }}
+          body: |
+            ## Release v${{ needs.prepare.outputs.version }}
+            
+            ### Deployment Status
+            - ✅ Staging validated
+            - ✅ Production deployed
+            
+            ### Changes
+            See [commits](https://github.com/${{ github.repository }}/commits/v${{ needs.prepare.outputs.version }}) for details.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
