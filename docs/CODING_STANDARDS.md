@@ -9,7 +9,41 @@
 
 ## Service URLs
 
-Alle Services werden über **Traefik** geroutet. Keine Port-Dokumentation nötig.
+Alle Services werden über **Traefik** geroutet. Für lokale Entwicklung ohne Docker haben alle Services einen eindeutigen Port zugewiesen.
+
+### Port-Zuordnung (Local Development)
+
+**WICHTIG:** Diese Ports sind verbindlich für lokale Entwicklung ohne Docker. Jeder Service muss seinen zugewiesenen Port verwenden, um Port-Konflikte zu vermeiden.
+
+| Service | Port | Beschreibung |
+|---------|------|--------------|
+| **payments.mojo** | 3000 | Payment Hub |
+| **kontakte.mojo** | 3001 | Kontaktverwaltung (CRM) |
+| **messaging.mojo** | 3002 | Echtzeit-Messaging |
+| **campus.mojo** | 3003 | Learning-Plattform |
+| **account.mojo** | 3004 | Account-Verwaltung |
+| **frontend.mojo** | 3005 | Marketing-Frontend |
+| **pos.mojo** | 3006 | Point of Sale |
+| **checkin.mojo** | 3007 | 10er-Karten-System |
+| **mailer.mojo** | 3008 | E-Mail-Marketing (Mautic) |
+| **connect.mojo** | 3009 | Workflow-Automation (n8n) |
+| **design.mojo** | 3010 | Design System Hub |
+| **admin.mojo** | 3011 | Platform Administration |
+
+**Verwendung:**
+```bash
+# Service mit zugewiesenem Port starten
+cd payments.mojo && PORT=3000 npm run dev
+cd kontakte.mojo && PORT=3001 npm run dev
+cd messaging.mojo && PORT=3002 npm run dev
+# etc.
+```
+
+**Regeln:**
+- ✅ IMMER den zugewiesenen Port verwenden
+- ✅ Port in `.env.development` oder `PORT` Umgebungsvariable setzen
+- ❌ NIEMALS einen bereits vergebenen Port verwenden
+- ❌ NIEMALS Ports willkürlich ändern
 
 ### Core Apps
 
@@ -2311,7 +2345,7 @@ CLERK_SECRET_KEY=sk_live_...
 CLERK_PUBLISHABLE_KEY=pk_live_...
 
 # Service-spezifisch
-PORT=3000
+PORT=3001  # WICHTIG: Verwende den zugewiesenen Port für den Service (siehe Port-Zuordnung oben)
 SERVICE_NAME=kontakte-api
 
 # Optional

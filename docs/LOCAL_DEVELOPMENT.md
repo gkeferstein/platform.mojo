@@ -271,12 +271,31 @@ npx prisma studio
 
 Für komplette lokale Entwicklung mit mehreren Services:
 
+**WICHTIG:** Jeder Service hat einen eindeutigen Port zugewiesen. Diese Ports sind verbindlich und dürfen nicht geändert werden.
+
 | Service | Port | Befehl |
 |---------|------|--------|
-| payments.mojo | 3000 | `cd payments.mojo && npm run dev` |
-| kontakte.mojo | 3001 | `cd kontakte.mojo && npm run dev` |
-| messaging.mojo | 3002 | `cd messaging.mojo && npm run dev` |
-| campus.mojo | 3003 | `cd campus.mojo && npm run dev` |
+| **payments.mojo** | 3000 | `cd payments.mojo && PORT=3000 npm run dev` |
+| **kontakte.mojo** | 3001 | `cd kontakte.mojo && PORT=3001 npm run dev` |
+| **messaging.mojo** | 3002 | `cd messaging.mojo && PORT=3002 npm run dev` |
+| **campus.mojo** | 3003 | `cd campus.mojo && PORT=3003 npm run dev` |
+| **account.mojo** | 3004 | `cd account.mojo && PORT=3004 npm run dev` |
+| **frontend.mojo** | 3005 | `cd frontend.mojo && PORT=3005 npm run dev` |
+| **pos.mojo** | 3006 | `cd pos.mojo && PORT=3006 npm run dev` |
+| **checkin.mojo** | 3007 | `cd checkin.mojo && PORT=3007 npm run dev` |
+| **mailer.mojo** | 3008 | `cd mailer.mojo && PORT=3008 npm run dev` |
+| **connect.mojo** | 3009 | `cd connect.mojo && PORT=3009 npm run dev` |
+| **design.mojo** | 3010 | `cd design.mojo && PORT=3010 npm run dev` |
+| **admin.mojo** | 3011 | `cd admin.mojo && PORT=3011 npm run dev` |
+
+**Port-Konflikte vermeiden:**
+```bash
+# Prüfe ob Port belegt ist
+lsof -i :3000
+
+# Stoppe Prozess auf Port (falls nötig)
+kill -9 <PID>
+```
 
 ### Mit Docker Compose (optional)
 
@@ -523,17 +542,21 @@ echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
 npm install
 ```
 
-### "Port 3000 already in use"
+### "Port XXXX already in use"
 
 **Lösung:**
 ```bash
 # Prozess finden und beenden
-lsof -i :3000
-kill -9 <PID>
+lsof -i :3000  # Ersetze 3000 mit dem zugewiesenen Port
 
-# Oder anderen Port verwenden
-PORT=3001 npm run dev
+# Prüfe alle MOJO-Ports (3000-3011)
+lsof -i :3000-3011
+
+# Prozess stoppen
+kill -9 <PID>
 ```
+
+**WICHTIG:** Verwende NICHT einfach einen anderen Port! Jeder Service hat einen fest zugewiesenen Port (siehe Port-Zuordnung oben). Wenn ein Port belegt ist, muss der belegende Prozess gestoppt werden.
 
 ### "Database connection refused"
 
