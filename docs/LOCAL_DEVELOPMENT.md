@@ -267,11 +267,14 @@ npx prisma studio
 
 ## Lokale Services
 
-### Alle Services einzeln starten
+### Alle Services einzeln starten (ohne Docker)
 
-Für komplette lokale Entwicklung mit mehreren Services:
+Für komplette lokale Entwicklung mit mehreren Services **ohne Docker**:
 
-**WICHTIG:** Jeder Service hat einen eindeutigen Port zugewiesen. Diese Ports sind verbindlich und dürfen nicht geändert werden.
+**⚠️ WICHTIG:** Diese Port-Zuordnung gilt **NUR für lokale Entwicklung ohne Docker**. 
+
+- ✅ **Local Development:** Diese Ports sind verbindlich und dürfen nicht geändert werden
+- ✅ **Staging/Production:** Docker + Traefik verwenden (Ports sind intern, kein Konflikt möglich)
 
 | Service | Port | Befehl |
 |---------|------|--------|
@@ -298,6 +301,14 @@ kill -9 <PID>
 ```
 
 ### Mit Docker Compose (optional)
+
+**Empfohlen:** Für lokale Entwicklung mit mehreren Services ist Docker Compose mit Traefik die bessere Lösung:
+
+**Vorteile:**
+- ✅ Keine Port-Konflikte (Traefik routet über Domain-Namen)
+- ✅ Identische Umgebung zu Staging/Production
+- ✅ Saubere URLs (`localhost/payments` statt `localhost:3000`)
+- ✅ Einfacheres Setup
 
 Falls du Docker für lokale Services nutzen möchtest:
 

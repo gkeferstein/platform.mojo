@@ -9,11 +9,23 @@
 
 ## Service URLs
 
-Alle Services werden über **Traefik** geroutet. Für lokale Entwicklung ohne Docker haben alle Services einen eindeutigen Port zugewiesen.
+Alle Services werden über **Traefik** geroutet. 
 
-### Port-Zuordnung (Local Development)
+**WICHTIG:** Die Port-Zuordnung gilt **NUR für lokale Entwicklung ohne Docker**. In Staging und Production werden Docker Container mit Traefik verwendet, wo Ports intern verwaltet werden.
 
-**WICHTIG:** Diese Ports sind verbindlich für lokale Entwicklung ohne Docker. Jeder Service muss seinen zugewiesenen Port verwenden, um Port-Konflikte zu vermeiden.
+### Port-Zuordnung (NUR Local Development)
+
+**⚠️ Gilt AUSSCHLIESSLICH für lokale Entwicklung ohne Docker!**
+
+In **Staging** und **Production**:
+- ✅ Services laufen in Docker Containers
+- ✅ Traefik routet über Domain-Namen (z.B. `payments.mojo-institut.de`)
+- ✅ Ports sind intern im Docker-Netzwerk (nicht von außen sichtbar)
+- ✅ Keine Port-Konfiguration nötig
+
+In **Local Development ohne Docker**:
+- ⚠️ Jeder Service muss einen eindeutigen Port verwenden
+- ⚠️ Diese Ports sind verbindlich, um Port-Konflikte zu vermeiden
 
 | Service | Port | Beschreibung |
 |---------|------|--------------|
@@ -30,20 +42,25 @@ Alle Services werden über **Traefik** geroutet. Für lokale Entwicklung ohne Do
 | **design.mojo** | 3010 | Design System Hub |
 | **admin.mojo** | 3011 | Platform Administration |
 
-**Verwendung:**
+**Verwendung (NUR Local Development):**
 ```bash
-# Service mit zugewiesenem Port starten
+# Service mit zugewiesenem Port starten (nur für lokale Entwicklung)
 cd payments.mojo && PORT=3000 npm run dev
 cd kontakte.mojo && PORT=3001 npm run dev
 cd messaging.mojo && PORT=3002 npm run dev
 # etc.
 ```
 
-**Regeln:**
+**Regeln für Local Development:**
 - ✅ IMMER den zugewiesenen Port verwenden
 - ✅ Port in `.env.development` oder `PORT` Umgebungsvariable setzen
 - ❌ NIEMALS einen bereits vergebenen Port verwenden
 - ❌ NIEMALS Ports willkürlich ändern
+
+**Für Staging/Production:**
+- ✅ Docker + Traefik verwenden (siehe [STAGING_SERVER_CONVENTION.md](./STAGING_SERVER_CONVENTION.md))
+- ✅ Keine Port-Konfiguration nötig - Traefik routet über Domain-Namen
+- ✅ Services laufen in `mojo-network` Docker-Netzwerk
 
 ### Core Apps
 
