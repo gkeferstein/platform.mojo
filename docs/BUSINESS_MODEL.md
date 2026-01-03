@@ -482,6 +482,491 @@ Transaction Fee: 3.9% + €0.50 = €4.40
 
 ---
 
+## 7.2. Stripe-Integration & Revenue-Management
+
+### Stripe-Setup für 3-Ebenen-Hierarchie
+
+**Architektur:**
+- **Platform Owner (MOJO LLC)**: Haupt-Stripe Account (Zentrale Instanz)
+- **Regional Partner**: Kein Stripe Account (Internes Revenue-Tracking)
+- **Tenant (B2B Kunden)**: Stripe Connect Express Account (Connected to Platform Owner)
+
+**Entscheidung:** Manuelle Auszahlungen an Regional Partner
+- ✅ Monatliche Auszahlungen
+- ✅ Transparentes Reporting für Regional Partner
+- ✅ Kein Stripe Setup für Regional Partner nötig
+- ✅ Vollständige Kontrolle durch Platform Owner
+
+---
+
+### Flow 1: Mitgliedschaften (campus.mojo)
+
+**Stripe-Integration:**
+```typescript
+// Direkter Payment zu Platform Owner Stripe Account
+const checkoutSession = await stripe.checkout.sessions.create({
+  payment_method_types: ['card'],
+  line_items: [{
+    price_data: {
+      currency: 'eur',
+      product_data: { name: 'LEBENSENERGIE Mitgliedschaft' },
+      unit_amount: 2900, // €29.00
+      recurring: { interval: 'month' },
+    },
+    quantity: 1,
+  }],
+  metadata: {
+    membership_type: 'LEBENSENERGIE',
+    user_id: userId,
+    billing_address_country: userCountry, // Für Regional Partner Bestimmung
+    region_id: regionId, // Automatisch aus Rechnungsadresse
+  },
+  success_url: '...',
+  cancel_url: '...',
+});
+```
+
+**Revenue-Tracking in admin.mojo:**
+```
+Payment erfolgreich (€29)
+    ↓
+1. Platform Owner erhält: €29.00 (auf Stripe Account)
+2. admin.mojo erstellt Revenue Record:
+   - Amount: €29.00
+   - Type: 'membership'
+   - Membership Type: 'LEBENSENERGIE'
+   - User ID: userId
+   - Region ID: regionId (aus Rechnungsadresse)
+   - Regional Partner ID: regionalPartnerId
+   - Platform Owner Share: €20.30 (70%)
+   - Regional Partner Provision: €8.70 (30%)
+   - Status: 'pending_payout'
+   - Payout Period: '2025-01' (Jahr-Monat)
+```
+
+---
+
+### Flow 2: Transaktionen (payments.mojo)
+
+**Stripe-Integration:**
+```typescript
+// Destination Charge mit Application Fee
+const paymentIntent = await stripe.paymentIntents.create({
+  amount: 10000, // €100.00 in cents
+  currency: 'eur',
+  application_fee_amount: 440, // €4.40 (3.9% + €0.50)
+  transfer_data: {
+    destination: tenantStripeAccountId, // Tenant Connected Account
+  },
+  metadata: {
+    tenant_id: tenantId,
+    regional_partner_id: regionalPartnerId, // Aus Tenant-Region
+    transaction_type: 'event_booking',
+    event_id: eventId,
+  },
+});
+```
+
+**Revenue-Tracking in admin.mojo:**
+```
+Payment erfolgreich (€100)
+    ↓
+1. Tenant erhält: €95.60 (automatisch via Stripe Transfer)
+2. Platform Owner erhält: €4.40 Application Fee (auf Stripe Account)
+3. admin.mojo erstellt Revenue Record:
+   - Amount: €100.00
+   - Transaction Fee: €4.40
+   - Type: 'transaction'
+   - Tenant ID: tenantId
+   - Region ID: tenant.regionId
+   - Regional Partner ID: regionalPartnerId
+   - Platform Owner Share: €3.08 (70% von €4.40)
+   - Regional Partner Provision: €1.32 (30% von €4.40)
+   - Status: 'pending_payout'
+   - Payout Period: '2025-01'
+```
+
+---
+
+### Revenue-Tracking in admin.mojo
+
+#### Datenmodell
+
+```typescript
+interface RevenueRecord {
+  id: string;
+  type: 'membership' | 'transaction';
+  
+  // Payment-Daten
+  amount: number; // Original-Betrag (z.B. €29 oder €100)
+  currency: string;
+  stripe_payment_id: string; // Stripe Payment Intent/Checkout Session ID
+  payment_date: Date;
+  
+  // Revenue-Aufteilung
+  platform_owner_amount: number; // Was Platform Owner behält
+  regional_partner_provision: number; // Was Regional Partner bekommt
+  transaction_fee?: number; // Nur bei Transaktionen (3.9% + €0.50)
+  
+  // Zuordnung
+  region_id: string;
+  regional_partner_id: string;
+  tenant_id?: string; // Nur bei Transaktionen
+  user_id?: string; // Nur bei Mitgliedschaften
+  
+  // Membership-spezifisch
+  membership_type?: 'LEBENSENERGIE' | 'RESILIENZ' | 'BUSINESS_BOOTCAMP' | 'REGENERATIONSMEDIZIN_OS';
+  
+  // Transaction-spezifisch
+  transaction_type?: 'event_booking' | 'mentoring' | 'workshop';
+  
+  // Payout-Management
+  payout_period: string; // Format: 'YYYY-MM' (z.B. '2025-01')
+  payout_status: 'pending' | 'approved' | 'paid' | 'cancelled';
+  payout_date?: Date;
+  payout_reference?: string; // Banküberweisungs-Referenz
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Payout {
+  id: string;
+  regional_partner_id: string;
+  payout_period: string; // 'YYYY-MM'
+  
+  // Revenue-Zusammenfassung
+  total_revenue: number; // Summe aller Revenue Records
+  total_provision: number; // Summe aller Provisionen
+  revenue_count: number; // Anzahl der Revenue Records
+  
+  // Breakdown nach Typ
+  membership_provision: number;
+  transaction_provision: number;
+  membership_count: number;
+  transaction_count: number;
+  
+  // Status
+  status: 'pending' | 'approved' | 'paid' | 'cancelled';
+  approved_at?: Date;
+  paid_at?: Date;
+  payment_reference?: string;
+  
+  // Bank-Details
+  bank_account_iban?: string;
+  bank_account_bic?: string;
+  bank_account_holder?: string;
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+---
+
+### Monatliches Payout-Process
+
+#### Schritt 1: Revenue-Aggregation (1. des Monats)
+
+```typescript
+// admin.mojo - Payout für letzten Monat erstellen
+async function createMonthlyPayouts(period: string) {
+  // Für jeden Regional Partner
+  const regionalPartners = await getRegionalPartners();
+  
+  for (const partner of regionalPartners) {
+    // Alle Revenue Records für diesen Partner und Period
+    const revenues = await getRevenueRecords({
+      regional_partner_id: partner.id,
+      payout_period: period,
+      payout_status: 'pending',
+    });
+    
+    // Aggregiere
+    const totalProvision = revenues.reduce((sum, r) => sum + r.regional_partner_provision, 0);
+    const membershipRevenues = revenues.filter(r => r.type === 'membership');
+    const transactionRevenues = revenues.filter(r => r.type === 'transaction');
+    
+    // Erstelle Payout
+    const payout = await createPayout({
+      regional_partner_id: partner.id,
+      payout_period: period,
+      total_revenue: revenues.reduce((sum, r) => sum + r.amount, 0),
+      total_provision: totalProvision,
+      revenue_count: revenues.length,
+      membership_provision: membershipRevenues.reduce((sum, r) => sum + r.regional_partner_provision, 0),
+      transaction_provision: transactionRevenues.reduce((sum, r) => sum + r.regional_partner_provision, 0),
+      membership_count: membershipRevenues.length,
+      transaction_count: transactionRevenues.length,
+      status: 'pending',
+    });
+    
+    // Markiere Revenue Records als zu diesem Payout gehörend
+    await updateRevenueRecords({
+      revenue_ids: revenues.map(r => r.id),
+      payout_id: payout.id,
+    });
+  }
+}
+```
+
+#### Schritt 2: Review & Approval (Platform Owner)
+
+**UI in admin.mojo:**
+```
+┌─────────────────────────────────────────────────────────┐
+│  Payout Review - Januar 2025                           │
+└─────────────────────────────────────────────────────────┘
+
+DACH Region (Regional Partner: Partner Name)
+├─ Total Provision: €1,234.50
+├─ Mitgliedschaften: €890.00 (72 Revenue Records)
+├─ Transaktionen: €344.50 (156 Revenue Records)
+└─ [Review Details] [Approve] [Reject]
+
+US Region (Regional Partner: Partner Name)
+├─ Total Provision: €2,567.80
+└─ ...
+
+[Approve All] [Export CSV]
+```
+
+#### Schritt 3: Auszahlung (manuell via Banküberweisung)
+
+```typescript
+// Nach manueller Auszahlung per Banküberweisung
+await updatePayout({
+  payout_id: payoutId,
+  status: 'paid',
+  paid_at: new Date(),
+  payment_reference: 'Überweisung XYZ-12345', // Banküberweisungs-Referenz
+});
+```
+
+---
+
+### Reporting für Regional Partner
+
+#### Dashboard-Übersicht (admin.mojo - Regional Partner View)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Regional Partner Dashboard - DACH Region              │
+└─────────────────────────────────────────────────────────┘
+
+Aktueller Monat (Januar 2025)
+├─ Total Provision: €1,234.50
+│  ├─ Mitgliedschaften: €890.00 (72 Sales)
+│  └─ Transaktionen: €344.50 (156 Transactions)
+│
+├─ Letzte Auszahlung: Dezember 2024
+│  └─ €987.30 (bezahlt am 15.01.2025, Ref: XYZ-12345)
+│
+└─ Nächste Auszahlung: Februar 2025 (voraussichtlich 15.02.2025)
+
+┌─────────────────────────────────────────────────────────┐
+│  Revenue-Details (Januar 2025)                         │
+└─────────────────────────────────────────────────────────┘
+
+Mitgliedschaften (72 Sales)
+├─ LEBENSENERGIE: €435.00 (15 Sales)
+├─ RESILIENZ: €237.00 (3 Sales)
+├─ BUSINESS BOOTCAMP: €178.20 (6 Sales)
+└─ RegenerationsmedizinOS: €39.80 (1 Sale)
+
+Transaktionen (156 Transactions)
+├─ Total Transaction Volume: €8,823.45
+├─ Transaction Fees: €394.50
+├─ Deine Provision (30%): €118.35
+└─ Platform Owner (70%): €276.15
+
+┌─────────────────────────────────────────────────────────┐
+│  Verlauf                                                    │
+└─────────────────────────────────────────────────────────┘
+
+| Period      | Membership | Transaction | Total    | Status   |
+|-------------|------------|-------------|----------|----------|
+| 2025-01     | €890.00    | €344.50     | €1,234.50| Pending  |
+| 2024-12     | €756.30    | €231.00     | €987.30  | Paid     |
+| 2024-11     | €689.40    | €198.60     | €888.00  | Paid     |
+```
+
+#### Detail-View: Einzelne Revenue Records
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Revenue Details - Januar 2025                         │
+└─────────────────────────────────────────────────────────┘
+
+Filter: [Alle] [Mitgliedschaften] [Transaktionen] [Period: 2025-01]
+
+| Datum       | Typ            | Betrag | Provision | Status   |
+|-------------|----------------|--------|-----------|----------|
+| 15.01.2025  | LEBENSENERGIE  | €29.00 | €8.70     | Pending  |
+| 15.01.2025  | Event Booking  | €100.00| €1.32     | Pending  |
+| 14.01.2025  | RESILIENZ      | €79.00 | €23.70    | Pending  |
+| ...         | ...            | ...    | ...       | ...      |
+
+[Export CSV] [Filter]
+```
+
+#### Export-Funktionen
+
+**CSV-Export für Regional Partner:**
+```csv
+Date,Type,Amount,Provision,Status
+2025-01-15,LEBENSENERGIE Membership,€29.00,€8.70,Pending
+2025-01-15,Event Booking,€100.00,€1.32,Pending
+2025-01-14,RESILIENZ Membership,€79.00,€23.70,Pending
+...
+```
+
+**PDF-Report für Steuerberater:**
+```
+MOJO Platform - Regional Partner Revenue Report
+DACH Region - Januar 2025
+
+Total Revenue: €12,345.67
+Total Provision: €1,234.50
+
+Breakdown:
+- Mitgliedschaften: €890.00 (72 Sales)
+- Transaktionen: €344.50 (156 Transactions)
+
+Auszahlung: Pending (voraussichtlich 15.02.2025)
+```
+
+---
+
+### Technische Implementierung
+
+#### Revenue Tracking Webhook Handler
+
+```typescript
+// admin.mojo - Webhook Handler für Stripe Payments
+async function handleStripePayment(paymentData: {
+  stripe_payment_id: string;
+  amount: number;
+  currency: string;
+  metadata: Record<string, string>;
+  payment_date: Date;
+}) {
+  // Bestimme Typ
+  const type = paymentData.metadata.membership_type 
+    ? 'membership' 
+    : 'transaction';
+  
+  // Bestimme Region & Regional Partner
+  const regionId = paymentData.metadata.region_id || 
+                   await determineRegionFromBillingAddress(paymentData.metadata.billing_address_country);
+  const regionalPartner = await getRegionalPartnerByRegion(regionId);
+  
+  // Berechne Provision
+  let platformOwnerAmount: number;
+  let regionalPartnerProvision: number;
+  
+  if (type === 'membership') {
+    platformOwnerAmount = paymentData.amount * 0.70;
+    regionalPartnerProvision = paymentData.amount * 0.30;
+  } else {
+    // Transaction: Application Fee war bereits 3.9% + €0.50
+    const transactionFee = paymentData.amount * 0.039 + 0.50;
+    platformOwnerAmount = transactionFee * 0.70;
+    regionalPartnerProvision = transactionFee * 0.30;
+  }
+  
+  // Erstelle Revenue Record
+  const revenue = await createRevenueRecord({
+    type,
+    amount: paymentData.amount,
+    currency: paymentData.currency,
+    stripe_payment_id: paymentData.stripe_payment_id,
+    payment_date: paymentData.payment_date,
+    platform_owner_amount: platformOwnerAmount,
+    regional_partner_provision: regionalPartnerProvision,
+    transaction_fee: type === 'transaction' ? paymentData.amount * 0.039 + 0.50 : null,
+    region_id: regionId,
+    regional_partner_id: regionalPartner.id,
+    tenant_id: paymentData.metadata.tenant_id,
+    user_id: paymentData.metadata.user_id,
+    membership_type: paymentData.metadata.membership_type,
+    transaction_type: paymentData.metadata.transaction_type,
+    payout_period: formatPayoutPeriod(paymentData.payment_date), // 'YYYY-MM'
+    payout_status: 'pending',
+  });
+  
+  return revenue;
+}
+```
+
+#### API-Endpoints für Regional Partner
+
+```typescript
+// admin.mojo - API für Regional Partner Dashboard
+
+// GET /api/regional-partners/:id/dashboard
+async function getRegionalPartnerDashboard(regionalPartnerId: string) {
+  const currentPeriod = formatPayoutPeriod(new Date());
+  const lastPeriod = getLastMonth(currentPeriod);
+  
+  // Aktuelle Period
+  const currentRevenues = await getRevenueRecords({
+    regional_partner_id: regionalPartnerId,
+    payout_period: currentPeriod,
+  });
+  
+  // Letzte Auszahlung
+  const lastPayout = await getLatestPayout({
+    regional_partner_id: regionalPartnerId,
+    status: 'paid',
+  });
+  
+  // Aggregation
+  const currentProvision = currentRevenues.reduce(
+    (sum, r) => sum + r.regional_partner_provision, 
+    0
+  );
+  
+  return {
+    current_period: currentPeriod,
+    current_provision: currentProvision,
+    current_revenue_count: currentRevenues.length,
+    membership_provision: currentRevenues
+      .filter(r => r.type === 'membership')
+      .reduce((sum, r) => sum + r.regional_partner_provision, 0),
+    transaction_provision: currentRevenues
+      .filter(r => r.type === 'transaction')
+      .reduce((sum, r) => sum + r.regional_partner_provision, 0),
+    last_payout: lastPayout,
+    next_payout_date: calculateNextPayoutDate(),
+  };
+}
+
+// GET /api/regional-partners/:id/revenues
+async function getRegionalPartnerRevenues(
+  regionalPartnerId: string,
+  filters: {
+    period?: string;
+    type?: 'membership' | 'transaction';
+    status?: 'pending' | 'paid';
+  }
+) {
+  return await getRevenueRecords({
+    regional_partner_id: regionalPartnerId,
+    ...filters,
+  });
+}
+
+// GET /api/regional-partners/:id/payouts
+async function getRegionalPartnerPayouts(regionalPartnerId: string) {
+  return await getPayouts({
+    regional_partner_id: regionalPartnerId,
+  });
+}
+```
+
+---
+
 ### Wichtige Punkte
 
 1. **Tenants sind Kunden des Platform Owners:**
