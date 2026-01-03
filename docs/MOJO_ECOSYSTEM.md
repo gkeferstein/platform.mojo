@@ -283,7 +283,7 @@ Die technische Basis des Ökosystems.
 |-----|--------|--------------|
 | **platform.mojo** | – | Zentrale Dokumentation, Templates, Scripts und Shared Packages für alle MOJO Apps. |
 | **design.mojo** | design.mojo-institut.de | Zentraler Design Hub mit dem `@gkeferstein/design` Package. Sorgt für eine einheitliche UI/UX-Erfahrung über alle Apps hinweg. |
-| **admin.mojo** | admin.mojo-institut.de | Platform Administration für regionale Verträge, Provisionen und Auszahlungen. |
+| **admin.mojo** | admin.mojo-institut.de | **Platform Administration für MOJO LLC**. Verwaltung von Regionalen Distributoren (DACH, US, INDIEN, etc.), globaler Überblick über alle Regionen/Tenants/Kunden, Revenue & Provisionen. MOJO LLC sieht ALLES, Regionale Distributoren sehen nur ihre Region. |
 
 ---
 

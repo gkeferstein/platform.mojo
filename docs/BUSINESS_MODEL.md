@@ -334,7 +334,17 @@ campus.mojo-institut.de
 
 ---
 
-## 7. Revenue-Modell
+## 7. Revenue-Modell & Platform-Hierarchie
+
+### Revenue-Modell (siehe unten)
+
+### Platform-Hierarchie: Regionale Distributoren
+
+Siehe [Abschnitt 7.5. Platform-Hierarchie: Regionale Distributoren](#75-platform-hierarchie-regionale-distributoren)
+
+---
+
+## 7.1. Revenue-Modell
 
 ### Revenue-Streams
 
@@ -409,6 +419,224 @@ campus.mojo-institut.de
 - B2B User können Events/Mentoring anbieten
 - B2C User können diese buchen
 - Transaktionen über `payments.mojo` (B2B Tenant)
+
+---
+
+## 7.5. Platform-Hierarchie: Regionale Distributoren
+
+### Die 3-Ebenen-Architektur
+
+MOJO LLC ist der **Platform Owner** weltweit. Für jede Weltregion gibt es **Regionale Distributoren**, die regionalen Vertrieb und Anpassungen machen.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  EBENE 1: MOJO LLC (Platform Owner)                        │
+│  → Sieht ALLES weltweit                                     │
+│  → Alle Regionalen Partner                                  │
+│  → Alle Tenants                                             │
+│  → Alle Kunden                                              │
+│  → Platform Administration (admin.mojo)                     │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+        ┌──────────────┼──────────────┬──────────────┐
+        │              │              │              │
+        ▼              ▼              ▼              ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ EBENE 2:     │ │ EBENE 2:     │ │ EBENE 2:     │ │ EBENE 2:     │
+│ DACH Region  │ │ US Region    │ │ INDIEN Region│ │ ... Region   │
+│              │ │              │ │              │ │              │
+│ Sieht nur:   │ │ Sieht nur:   │ │ Sieht nur:   │ │ Sieht nur:   │
+│ • DACH Tenant│ │ • US Tenants │ │ • INDIEN     │ │ • ... Tenants│
+│ • DACH Kunden│ │ • US Kunden  │ │   Tenants    │ │ • ... Kunden │
+└──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+       │                │                │                │
+       └────────────────┼────────────────┼────────────────┘
+                        │                │
+        ┌───────────────┼────────────────┼───────────────┐
+        │               │                │               │
+        ▼               ▼                ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ EBENE 3:     │ │ EBENE 3:     │ │ EBENE 3:     │ │ EBENE 3:     │
+│ Tenant Anna  │ │ Tenant Tom   │ │ Tenant ...   │ │ Tenant ...   │
+│ (B2B Profi)  │ │ (B2B Profi)  │ │              │ │              │
+│              │ │              │ │              │ │              │
+│ Sieht nur:   │ │ Sieht nur:   │ │ Sieht nur:   │ │ Sieht nur:   │
+│ • Eigene     │ │ • Eigene     │ │ • Eigene     │ │ • Eigene     │
+│   Kunden     │ │   Kunden     │ │   Kunden     │ │   Kunden     │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+```
+
+### admin.mojo – Platform Administration
+
+**Rolle:** Zentrale Platform Administration für MOJO LLC
+
+**Zugang:** Nur für MOJO LLC Team (Platform Owner)
+
+**Features:**
+- **Regionale Distributoren verwalten**
+  - Neue Regionen anlegen (DACH, US, INDIEN, etc.)
+  - Regionale Verträge verwalten
+  - Provisionen und Auszahlungen für Regionen
+
+- **Globale Übersicht**
+  - Alle Regionen weltweit
+  - Alle Tenants in allen Regionen
+  - Alle Kunden (aggregiert)
+  - Platform-Health & Analytics
+
+- **Revenue & Provisionen**
+  - Regionale Revenue-Tracking
+  - Provision-Berechnung für Regionale Partner
+  - Auszahlungs-Management
+  - Platform-Fees
+
+### Regionale Versionen
+
+**Jede Region hat eigene Campus-Versionen:**
+
+| Region | Campus Version | Domain (Beispiel) | Anpassungen |
+|--------|----------------|-------------------|-------------|
+| **DACH** | campus.mojo-dach | campus.dach.mojo-institut.de | Deutsche Sprache, DACH-spezifische Inhalte |
+| **US** | campus.mojo-us | campus.us.mojo-institut.de | Englisch, US-spezifische Inhalte |
+| **INDIEN** | campus.mojo-indien | campus.indien.mojo-institut.de | Hindi/Englisch, INDIEN-spezifische Inhalte |
+| **...** | campus.mojo-{region} | campus.{region}.mojo-institut.de | Region-spezifisch |
+
+**Gleiches gilt für andere Apps:**
+- `payments.mojo-dach`, `payments.mojo-us`, etc.
+- `kontakte.mojo-dach`, `kontakte.mojo-us`, etc.
+- Alle Apps können regionalisiert werden
+
+### Zugriffsrechte: Wer sieht was?
+
+#### MOJO LLC (Platform Owner)
+
+**Sieht ALLES:**
+- ✅ Alle Regionen (DACH, US, INDIEN, ...)
+- ✅ Alle Regionalen Partner
+- ✅ Alle Tenants in allen Regionen
+- ✅ Alle Kunden (aggregiert)
+- ✅ Globale Platform-Metriken
+- ✅ Regionale Revenue & Provisionen
+
+**Zugang:** `admin.mojo` (Platform Administration)
+
+#### Regionale Distributoren
+
+**Sieht nur ihre Region:**
+- ✅ Alle Tenants in ihrer Region
+- ✅ Alle Kunden in ihrer Region
+- ✅ Regionale Metriken
+- ✅ Regionale Revenue
+- ❌ Keine Zugriff auf andere Regionen
+- ❌ Keine Zugriff auf globale Platform-Daten
+
+**Zugang:** Regionale Admin-View in `admin.mojo` (gefiltert nach Region)
+
+**Beispiel:**
+- DACH Distributor sieht nur DACH Tenants und DACH Kunden
+- US Distributor sieht nur US Tenants und US Kunden
+
+#### Tenants (B2B Kunden)
+
+**Sieht nur eigene Daten:**
+- ✅ Eigene Kunden
+- ✅ Eigene Zahlungen
+- ✅ Eigene Events/Mentoring
+- ❌ Keine Zugriff auf andere Tenants
+- ❌ Keine Zugriff auf regionale Daten
+- ❌ Keine Zugriff auf Platform-Daten
+
+**Zugang:** Ihre eigenen Apps (`payments.mojo`, `kontakte.mojo`, etc.)
+
+### Datenmodell: Regionale Hierarchie
+
+```typescript
+// Platform-Ebene
+interface Region {
+  id: string;
+  code: 'DACH' | 'US' | 'INDIEN' | string;
+  name: string;
+  distributorId: string; // Regionale Distributor ID
+  currency: string;
+  locale: string;
+}
+
+// Tenant mit Region-Referenz
+interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+  regionId: string; // VERBINDUNG ZUR REGION
+  clerkOrgId?: string;
+  // ...
+}
+
+// User mit Region (optional)
+interface CampusUser {
+  clerkUserId: string;
+  membership: Membership;
+  regionId?: string; // Region, in der User registriert ist
+  // ...
+}
+```
+
+### Technische Umsetzung
+
+#### admin.mojo – Regionale Filterung
+
+```typescript
+// admin.mojo - Platform Owner sieht ALLES
+async function getAllRegions() {
+  // MOJO LLC sieht alle Regionen
+  return await prisma.region.findMany();
+}
+
+// admin.mojo - Regionale Distributor sieht nur seine Region
+async function getRegionalData(distributorId: string) {
+  const region = await prisma.region.findUnique({
+    where: { distributorId },
+    include: {
+      tenants: true, // Alle Tenants in dieser Region
+      users: true,   // Alle User in dieser Region
+    },
+  });
+  return region;
+}
+```
+
+#### Tenant-Isolation pro Region
+
+```typescript
+// payments.mojo - Tenant sieht nur eigene Daten
+async function getTenantCustomers(tenantId: string, regionId: string) {
+  // Sicherstellung: Tenant gehört zur Region
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+  });
+  
+  if (tenant.regionId !== regionId) {
+    throw new Error('Unauthorized: Tenant does not belong to region');
+  }
+  
+  // Return nur Kunden dieses Tenants
+  return await prisma.customer.findMany({
+    where: { tenantId },
+  });
+}
+```
+
+#### Regionale Campus-Versionen
+
+**Jede Region hat eigene Deployment:**
+- `campus.mojo-dach` → Separate DB, eigene Instanz
+- `campus.mojo-us` → Separate DB, eigene Instanz
+- `campus.mojo-indien` → Separate DB, eigene Instanz
+
+**Gemeinsam:**
+- Gleiche Codebase
+- Gleiche Architektur
+- Regionale Konfiguration via Environment Variables
+- Regionale Inhalte via CMS
 
 ---
 
@@ -758,6 +986,7 @@ async function findContactByClerkUserId(
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 1.3.0 | 03.01.2026 | Platform-Hierarchie dokumentiert: 3-Ebenen-System (MOJO LLC → Regionale Distributoren → Tenants), regionale Campus-Versionen, Zugriffsrechte klar definiert |
 | 1.2.0 | 03.01.2026 | Datenmodell B2C ↔ B2B Verbindung dokumentiert: Real-time Sync, Consent für B2B Beziehungen, Privacy-First Ansatz |
 | 1.1.0 | 03.01.2026 | B2C Angebotsmodell Referenz hinzugefügt |
 | 1.0.0 | 03.01.2026 | Initial Release – Business Model Dokumentation mit Flywheel-System |
