@@ -612,9 +612,12 @@ MOJO LLC ist der **Platform Owner** weltweit. Für jede Weltregion gibt es **Reg
 
 - **Revenue & Provisionen**
   - Regionale Revenue-Tracking
-  - Provision-Berechnung für Regionale Partner
+  - Provision-Berechnung für Regionale Partner:
+    - **Mitgliedschaften:** 30% Provision an Regional Partner (70% an Platform Owner)
+    - **Transaction Fees:** 30% von 3.9% + €0.50 Fee (70% an Platform Owner)
   - Auszahlungs-Management
-  - Platform-Fees
+  - Regional Distribution Agreements verwalten
+  - Transaction Fee Deals (3.9% + €0.50 pro Transaktion) zwischen Regional Partner und Tenant
 
 ### Regionale Versionen
 
@@ -1112,6 +1115,7 @@ async function findContactByClerkUserId(
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 1.4.0 | 03.01.2026 | Revenue-Modell detailliert: Exakte Zahlen (3.9% + €0.50 Transaction Fee, 70/30 Split), Mitgliedschaften Flow, alle Revenue-Streams dokumentiert |
 | 1.3.0 | 03.01.2026 | Platform-Hierarchie dokumentiert: 3-Ebenen-System (MOJO LLC → Regionale Distributoren → Tenants), regionale Campus-Versionen, Zugriffsrechte klar definiert |
 | 1.2.0 | 03.01.2026 | Datenmodell B2C ↔ B2B Verbindung dokumentiert: Real-time Sync, Consent für B2B Beziehungen, Privacy-First Ansatz |
 | 1.1.0 | 03.01.2026 | B2C Angebotsmodell Referenz hinzugefügt |
