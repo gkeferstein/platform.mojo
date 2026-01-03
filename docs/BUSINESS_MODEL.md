@@ -412,6 +412,277 @@ campus.mojo-institut.de
 
 ---
 
+## 8. Datenmodell: B2C ↔ B2B Verbindung
+
+### Die Verbindung zwischen campus.mojo und payments.mojo
+
+**Kernfrage:** Wie sind B2C Kunden in `campus.mojo` mit B2B Tenants in `payments.mojo` verbunden, wenn die gleiche Person beide Rollen hat?
+
+### Lösung: Clerk User ID als zentrale Verbindung
+
+**Prinzip:** Gleiche Person = Gleiche `clerkUserId` überall, aber verschiedene Kontexte durch Tenant-Separation.
+
+```
+┌─────────────────────────────────────────────────┐
+│  account.mojo (Single Source of Truth)          │
+│                                                  │
+│  User: Max (Clerk User ID: user_abc123)         │
+│  ├── B2C Mitgliedschaft: LEBENSENERGIE         │
+│  │   → campus.mojo Zugriff                     │
+│  │                                              │
+│  └── B2B Tenant Kunde (in verschiedenen Tenants)│
+│      → kontakte.mojo (Anna's Tenant)           │
+│      → payments.mojo (Anna's Tenant)            │
+└─────────────────────────────────────────────────┘
+```
+
+### Datenmodell-Struktur
+
+#### campus.mojo
+
+```typescript
+interface CampusUser {
+  clerkUserId: string; // "user_abc123" - ZENTRALE VERBINDUNG
+  membership: 'LEBENSENERGIE' | 'RESILIENZ' | 'BUSINESS_BOOTCAMP' | 'REGENERATIONSMEDIZIN_OS';
+  type: 'B2C' | 'B2B';
+  email: string;
+  name: string;
+}
+```
+
+#### kontakte.mojo (B2B Tenant)
+
+```typescript
+interface Contact {
+  id: string;
+  clerkUserId: string; // "user_abc123" - VERBINDUNG ZU CAMPUS USER
+  tenantId: string; // B2B Tenant ID (z.B. Anna's Tenant)
+  name: string;
+  email: string;
+  // ... weitere Felder
+}
+```
+
+**Wichtig:** Ein User kann in mehreren B2B Tenants als Kontakt existieren, immer mit derselben `clerkUserId`.
+
+#### payments.mojo (B2B Tenant)
+
+```typescript
+interface Customer {
+  id: string;
+  clerkUserId: string; // "user_abc123" - VERBINDUNG ZU CAMPUS USER
+  tenantId: string; // B2B Tenant ID
+  contactId: string; // Referenz zu kontakte.mojo
+  // ... weitere Felder
+}
+```
+
+### Event-Buchung Flow
+
+**Beispiel:** Max (B2C) bucht Event bei Anna (B2B)
+
+```
+1. Max (B2C, clerkUserId: "user_abc123") bucht Event bei Anna (B2B, tenantId: "tenant_anna")
+   in campus.mojo
+   ↓
+2. campus.mojo erstellt Buchung:
+   {
+     buyerClerkUserId: "user_abc123",
+     sellerTenantId: "tenant_anna",
+     eventId: "event_xyz"
+   }
+   ↓
+3. campus.mojo ruft kontakte.mojo auf (mit sellerTenantId als x-tenant-id Header):
+   POST /api/contacts
+   {
+     clerkUserId: "user_abc123",  // Max's ID - VERBINDUNG!
+     tenantId: "tenant_anna",
+     name: "Max Mustermann",
+     email: "max@example.com",
+     source: "campus_event_booking"
+   }
+   ↓
+4. kontakte.mojo erstellt/aktualisiert Kontakt:
+   - Wenn Kontakt existiert (gleiche clerkUserId + tenantId) → Update
+   - Wenn nicht → Neuer Kontakt
+   ↓
+5. campus.mojo leitet Zahlung an payments.mojo weiter (mit sellerTenantId als x-tenant-id Header):
+   POST /api/payments
+   {
+     clerkUserId: "user_abc123",  // Max's ID - VERBINDUNG!
+     tenantId: "tenant_anna",
+     contactId: "contact_xyz",
+     amount: 100,
+     bookingId: "booking_123"
+   }
+   ↓
+6. payments.mojo erstellt Zahlung:
+   - Verknüpft mit Max's clerkUserId
+   - In Anna's Tenant
+   - Referenziert Kontakt aus kontakte.mojo
+```
+
+### Daten-Synchronisation: Real-time Sync (Option A)
+
+**Entscheidung:** Real-time Synchronisation zwischen Systemen.
+
+**Implementierung:**
+
+1. **Bei Änderung in `account.mojo`:**
+   - Webhook an alle betroffenen Services
+   - Update in `campus.mojo` User-Profil
+   - Update in allen B2B Tenants, wo User als Kontakt existiert
+
+2. **Bei Event-Buchung in `campus.mojo`:**
+   - Sofortige Synchronisation zu `kontakte.mojo`
+   - Sofortige Synchronisation zu `payments.mojo`
+
+3. **Cache-Strategie:**
+   - User-Daten werden gecached (TTL: 5 Minuten)
+   - Bei Updates: Cache-Invalidierung
+
+**Vorteile:**
+- ✅ Immer aktuelle Daten
+- ✅ Konsistenz zwischen Systemen
+- ✅ Bessere User Experience
+
+**Implementierung:**
+```typescript
+// account.mojo - Webhook bei User-Update
+async function onUserUpdate(userId: string, changes: UserChanges) {
+  // 1. Update campus.mojo
+  await updateCampusUser(userId, changes);
+  
+  // 2. Update in allen B2B Tenants, wo User Kontakt ist
+  const contacts = await getContactsByClerkUserId(userId);
+  for (const contact of contacts) {
+    await updateContactInTenant(contact.tenantId, userId, changes);
+  }
+}
+```
+
+### User sieht B2B Tenant-Beziehungen: Mit Consent (Option 2)
+
+**Entscheidung:** User kann seine B2B Tenant-Beziehungen sehen, aber nur mit explizitem Consent.
+
+**Implementierung in `account.mojo`:**
+
+```typescript
+interface UserProfile {
+  clerkUserId: string;
+  b2cMembership: Membership;
+  
+  // B2B Tenant Beziehungen (nur wenn Consent gegeben)
+  b2bRelationships?: Array<{
+    tenantId: string;
+    tenantName: string;
+    role: 'customer' | 'contact';
+    since: Date;
+    lastInteraction: Date;
+  }>;
+  
+  // Consent-Settings
+  consentSettings: {
+    showB2bRelationships: boolean; // User muss aktiv zustimmen
+    shareB2cMembershipWithB2b: boolean; // Wird nicht verwendet (siehe unten)
+  };
+}
+```
+
+**UI in `account.mojo`:**
+```
+┌─────────────────────────────────────────────┐
+│  Deine B2B Beziehungen                     │
+│                                             │
+│  ℹ️  Diese Informationen sind privat.      │
+│      Aktiviere sie, um zu sehen, bei       │
+│      welchen Gesundheitsprofis du Kunde    │
+│      bist.                                  │
+│                                             │
+│  ☐ B2B Beziehungen anzeigen                │
+│                                             │
+│  [Speichern]                                │
+└─────────────────────────────────────────────┘
+
+Nach Aktivierung:
+┌─────────────────────────────────────────────┐
+│  Deine B2B Beziehungen                     │
+│                                             │
+│  Du bist Kunde bei:                        │
+│  • Anna Schmidt (seit 15.12.2024)          │
+│    → 3 Events gebucht                      │
+│  • Tom Müller (seit 20.12.2024)            │
+│    → 1 Mentoring gebucht                   │
+└─────────────────────────────────────────────┘
+```
+
+**Privacy-First:**
+- ✅ Standard: Aus (Opt-in)
+- ✅ User muss explizit zustimmen
+- ✅ Klare Information, was angezeigt wird
+
+### B2B Profi sieht B2C Mitgliedschaft: Nein (Option 3)
+
+**Entscheidung:** B2B Profis sehen NICHT die B2C Mitgliedschaft ihrer Kunden.
+
+**Begründung:**
+- Privacy-First Ansatz
+- B2C Mitgliedschaft ist private Information
+- Keine Notwendigkeit für B2B Geschäftsbeziehung
+
+**Implementierung:**
+- In `kontakte.mojo` wird `clerkUserId` gespeichert
+- Aber: Kein Zugriff auf `campus.mojo` Mitgliedschafts-Daten
+- B2B Profi sieht nur:
+  - Kontakt-Informationen (Name, Email, etc.)
+  - Buchungs-Historie
+  - Zahlungs-Historie
+  - **NICHT:** B2C Mitgliedschaft, LEBENSENERGIE-Level, etc.
+
+**Ausnahme (nur wenn User explizit teilt):**
+- User kann optional in `account.mojo` einstellen: "Teile meine B2C Mitgliedschaft mit B2B Profis"
+- Aber: Standard ist "NEIN"
+
+### Technische Integration
+
+#### Service-to-Service Kommunikation
+
+**Tenant-Header bei API-Calls:**
+```typescript
+// campus.mojo → kontakte.mojo
+await fetch('https://kontakte.mojo-institut.de/api/contacts', {
+  method: 'POST',
+  headers: {
+    'x-tenant-id': sellerTenantId, // Anna's Tenant
+    'Authorization': `Bearer ${serviceToken}`,
+  },
+  body: JSON.stringify({
+    clerkUserId: userId, // Max's ID
+    // ...
+  }),
+});
+```
+
+**Kontakt-Lookup mit clerkUserId:**
+```typescript
+// kontakte.mojo - Finde Kontakt in Tenant
+async function findContactByClerkUserId(
+  tenantId: string,
+  clerkUserId: string
+): Promise<Contact | null> {
+  return await prisma.contact.findUnique({
+    where: {
+      clerkUserId_tenantId: {
+        clerkUserId,
+        tenantId,
+      },
+    },
+  });
+}
+```
+
+---
+
 ## 9. Implementierungs-Überlegungen
 
 ### campus.mojo Multitenancy
@@ -438,8 +709,14 @@ campus.mojo-institut.de
 1. B2B User erstellt Event/Mentoring in `campus.mojo`
 2. B2C User sieht verfügbare Events
 3. B2C User bucht Event
-4. Zahlung geht an B2B Tenant in `payments.mojo`
-5. Platform-Fee (optional) an MOJO
+4. **Daten-Synchronisation:**
+   - B2C User wird als Kontakt in B2B Tenant angelegt/aktualisiert (`kontakte.mojo`)
+   - Real-time Sync mit `clerkUserId` als Verbindung
+5. Zahlung geht an B2B Tenant in `payments.mojo`
+   - Verknüpft mit `clerkUserId` des B2C Users
+6. Platform-Fee (optional) an MOJO
+
+**Details:** Siehe [Event-Buchung Flow](#event-buchung-flow) in Abschnitt 8.
 
 ---
 
@@ -449,6 +726,7 @@ campus.mojo-institut.de
 
 - [x] `MOJO_ECOSYSTEM.md` aktualisieren mit B2C/B2B Trennung
 - [x] B2C Angebotsmodell detailliert ausgearbeitet → [B2C_OFFER_MODEL.md](./B2C_OFFER_MODEL.md)
+- [x] Datenmodell B2C ↔ B2B Verbindung dokumentiert
 - [ ] Architektur-Dokumentation für Multitenancy-Ansatz
 
 ### Technische Umsetzung
@@ -456,7 +734,9 @@ campus.mojo-institut.de
 - [ ] `campus.mojo` Multitenancy-Design finalisieren
 - [ ] Mitgliedschafts-System designen
 - [ ] Event/Mentoring-Buchungssystem planen
-- [ ] Integration `campus.mojo` ↔ `payments.mojo` planen
+- [ ] Integration `campus.mojo` ↔ `payments.mojo` implementieren
+- [x] Real-time Sync zwischen `account.mojo` ↔ `campus.mojo` ↔ `kontakte.mojo`
+- [ ] Consent-System für B2B Beziehungen in `account.mojo`
 
 ### B2C Rollout
 
@@ -478,6 +758,7 @@ campus.mojo-institut.de
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 1.2.0 | 03.01.2026 | Datenmodell B2C ↔ B2B Verbindung dokumentiert: Real-time Sync, Consent für B2B Beziehungen, Privacy-First Ansatz |
 | 1.1.0 | 03.01.2026 | B2C Angebotsmodell Referenz hinzugefügt |
 | 1.0.0 | 03.01.2026 | Initial Release – Business Model Dokumentation mit Flywheel-System |
 
