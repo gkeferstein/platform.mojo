@@ -1,22 +1,25 @@
 # MOJO Ökosystem
 
-> **System für chronische Gesundheit** – Die zentrale Dokumentation für das gesamte MOJO-Ökosystem
+> **Flywheel-System für chronische Gesundheit** – Die zentrale Dokumentation für das gesamte MOJO-Ökosystem
 
-**Version:** 2.0.0  
-**Letzte Aktualisierung:** 01. Januar 2026
+**Version:** 2.1.0  
+**Letzte Aktualisierung:** 03. Januar 2026
 
 ---
 
 ## Inhaltsverzeichnis
 
 1. [Vision und Mission](#1-vision-und-mission)
-2. [User Journey](#2-user-journey)
-3. [App-Katalog](#3-app-katalog)
-4. [Architektur](#4-architektur)
-5. [Entitlement-System](#5-entitlement-system)
-6. [Technologie-Stack](#6-technologie-stack)
-7. [Coding Standards](#7-coding-standards)
-8. [Referenzen](#8-referenzen)
+2. [Business Model Übersicht](#2-business-model-übersicht)
+3. [User Journey](#3-user-journey)
+4. [App-Katalog](#4-app-katalog)
+5. [Architektur](#5-architektur)
+6. [Entitlement-System](#6-entitlement-system)
+7. [Technologie-Stack](#7-technologie-stack)
+8. [Coding Standards](#8-coding-standards)
+9. [Referenzen](#9-referenzen)
+
+> **📄 Vollständige Business Model Dokumentation:** Siehe [BUSINESS_MODEL.md](./BUSINESS_MODEL.md)
 
 ---
 
@@ -59,9 +62,57 @@ Das MOJO-Ökosystem bietet eine **einheitliche Journey**, die von ersten AHA-Mom
 
 ---
 
-## 2. User Journey
+## 2. Business Model Übersicht
 
-### Übersicht der drei Phasen
+MOJO ist ein **Flywheel-System** mit zwei sich gegenseitig stärkenden Segmenten:
+
+### B2C Segment: Menschen mit chronischen Krankheiten
+
+**Zentrale Frage:** "Was kann ich selbst NOCH tun?"
+
+**Angebot:**
+- Digitale Kurse für mehr Gesundheit und Lebensenergie
+- Live Workshops, Events, Gruppenformate
+- 1-zu-1 Mentoring
+
+**Stufen:**
+- **Stufe 1: LEBENSENERGIE** – Erste AHA-Momente, Basis-Kurse
+- **Stufe 2: RESILIENZ** – Vertiefte Gesundheitskompetenz
+
+### B2B Segment: Gesundheitsprofis
+
+**Zentrale Frage:** "Wie werde ich selbstständiger Gesundheitsprofi im Selbstzahlerbereich?"
+
+**Zielgruppe:** Heilpraktiker, Ärzte, Physios (aus dem Kassensystem)
+
+**Stufen:**
+- **Stufe 3: BUSINESS BOOTCAMP** – Grundlagen Selbstständigkeit
+- **Stufe 4: RegenerationsmedizinOS** – Fachliche Vertiefung, Mentor-Status
+
+### Das Flywheel
+
+```
+B2B durchläuft Ausbildung → Werden Mentoren → Bieten Services für B2C an
+→ B2C bucht Events/Mentoring → B2B generiert Revenue → Mehr B2B & B2C
+→ Flywheel beschleunigt sich
+```
+
+**Zentrale Plattform:** `campus.mojo` – EINE zentrale User Journey für alle
+
+→ **Vollständige Dokumentation:** [BUSINESS_MODEL.md](./BUSINESS_MODEL.md)
+
+---
+
+## 3. User Journey
+
+### Übersicht: Zentrale Journey über campus.mojo
+
+**Wichtig:** Es gibt **EINE zentrale User Journey** durch `campus.mojo`. User können unterschiedliche Wege gehen:
+
+- **B2C Weg:** LEBENSENERGIE → RESILIENZ (Ende)
+- **B2B Weg:** BUSINESS BOOTCAMP → RegenerationsmedizinOS (dann Mentor für B2C)
+
+### Zwei Wege durch die Journey
 
 ```mermaid
 flowchart TB
@@ -90,57 +141,84 @@ flowchart TB
     phase2 --> phase3
 ```
 
-### Phase 1: AHA-Momente (Monate 1-6)
+### B2C Journey: LEBENSENERGIE → RESILIENZ
 
-**Ziel:** Erste Berührung mit dem LEBENSENERGIE-Konzept und Einstieg in die Community
+#### Stufe 1: LEBENSENERGIE
 
-| App | Funktion | Zugang |
-|-----|----------|--------|
-| frontend.mojo | Entdeckung und Information | Öffentlich |
-| campus.mojo | Erste Kurse und Lerninhalte | Nach Registrierung |
-| account.mojo | Eigenes Konto verwalten | Nach Registrierung |
-| messaging.mojo | Community-Austausch | Basis-Features |
+**Ziel:** Erste AHA-Momente, mehr Gesundheit und Lebensenergie
+
+**Zentrale Frage:** "Was kann ich selbst NOCH tun?"
+
+| Angebot | Format | Plattform |
+|---------|--------|-----------|
+| Digitale Kurse | Online | campus.mojo |
+| Basis-Workshops | Online/Live | campus.mojo |
+| Community | Forum | campus.mojo |
+| Erste Events | Live | campus.mojo |
 
 **Meilensteine:**
 - ✓ Account erstellt
 - ✓ Ersten Kurs abgeschlossen
 - ✓ Erste Community-Interaktion
 
-### Phase 2: Lernen und Wachsen (Monate 6-18)
+#### Stufe 2: RESILIENZ
 
-**Ziel:** Vertiefung des Wissens und Aufbau des eigenen Netzwerks
+**Ziel:** Vertiefte Gesundheitskompetenz
 
-| App | Funktion | Zugang |
-|-----|----------|--------|
-| campus.mojo | Erweiterte Kurse und Zertifizierungen | Subscription |
-| kontakte.mojo | Erste Kontaktverwaltung | Nach Freischaltung |
-| mailer.mojo | Eigene E-Mail-Listen aufbauen | Nach Freischaltung |
-| connect.mojo | Erste Automatisierungen | Nach Freischaltung |
-
-**Meilensteine:**
-- ✓ Zertifizierung abgeschlossen
-- ✓ Eigenes Netzwerk aufgebaut (min. 50 Kontakte)
-- ✓ Erste E-Mail-Kampagne gestartet
-
-### Phase 3: Eigenes Business (Monate 18-36)
-
-**Ziel:** Vollständiges eigenes Gesundheitsbusiness mit allen Tools
-
-| App | Funktion | Zugang |
-|-----|----------|--------|
-| pos.mojo | Kartenzahlungen an der Theke | Business-Subscription |
-| checkin.mojo | 10er-Karten-System für eigene Kurse | Business-Subscription |
-| payments.mojo | Vollständige Zahlungs- und Rechnungsverwaltung | Business-Subscription |
-| campus.mojo (Multitenancy) | Eigene digitale Kurse veröffentlichen | Creator-Subscription |
+| Angebot | Format | Plattform |
+|---------|--------|-----------|
+| Erweiterte Kurse | Online | campus.mojo |
+| Vertiefte Workshops | Online/Live | campus.mojo |
+| Gruppenformate | Online/Live | campus.mojo |
+| 1-zu-1 Mentoring | Online/Live | campus.mojo (von B2B Profis) |
 
 **Meilensteine:**
-- ✓ Erste Zahlung über POS erhalten
-- ✓ Erste 10er-Karte verkauft
-- ✓ Eigenen Kurs auf campus.mojo veröffentlicht
+- ✓ Vertiefte Gesundheitskompetenz aufgebaut
+- ✓ An Gruppenformaten teilgenommen
+- ✓ Optional: Mentoring gebucht
 
 ---
 
-## 3. App-Katalog
+### B2B Journey: BUSINESS BOOTCAMP → RegenerationsmedizinOS
+
+#### Stufe 3: BUSINESS BOOTCAMP
+
+**Ziel:** Grundlagen für selbstständige Tätigkeit im Selbstzahlerbereich
+
+**Zentrale Frage:** "Wie werde ich selbstständiger Gesundheitsprofi?"
+
+| Angebot | Format | Plattform |
+|---------|--------|-----------|
+| Business-Kurse | Online | campus.mojo |
+| Tools-Training | Online | campus.mojo |
+| Community | Forum | campus.mojo |
+| payments.mojo | Tool | payments.mojo (Multitenancy) |
+
+**Meilensteine:**
+- ✓ Business-Modell entwickelt
+- ✓ Erste Tools freigeschaltet
+- ✓ Erste Zahlungen über payments.mojo
+
+#### Stufe 4: RegenerationsmedizinOS
+
+**Ziel:** Fachliche Vertiefung + Mentor werden
+
+| Angebot | Format | Plattform |
+|---------|--------|-----------|
+| Fachkurse | Online | campus.mojo |
+| Mentor-Ausbildung | Online/Live | campus.mojo |
+| Event-Erstellung | Tool | campus.mojo |
+| B2C Services anbieten | Platform | campus.mojo |
+
+**Meilensteine:**
+- ✓ Mentor-Status erreicht
+- ✓ Erste Events für B2C angeboten
+- ✓ Erste B2C Kunden betreut
+- ✓ Revenue über B2C Services generiert
+
+---
+
+## 4. App-Katalog
 
 ### Übersicht aller Apps
 
@@ -173,7 +251,7 @@ Diese Apps sind für alle authentifizierten User verfügbar.
 | App | Domain | Beschreibung |
 |-----|--------|--------------|
 | **account.mojo** | account.mojo-institut.de | Zentrale Accountverwaltung für das gesamte Ökosystem. Hier verwalten User ihre persönlichen Daten, Subscriptions und verknüpften Organizations. |
-| **campus.mojo** | campus.mojo-institut.de | Learning-Plattform, auf der jeder als User beginnt. Mit Multitenancy-Support können fortgeschrittene User eigene digitale Kurse launchen. |
+| **campus.mojo** | campus.mojo-institut.de | **Zentrale Plattform** für alle User (B2C + B2B). Alle Kurse, Foren, Community, Live Calls und Events. EINE zentrale User Journey durch die MOJO Welt. Mitgliedschafts-basierter Zugriff (LEBENSENERGIE, RESILIENZ, BUSINESS BOOTCAMP, RegenerationsmedizinOS). |
 | **frontend.mojo** | mojo-institut.de | Das Marketing-Frontend – die öffentliche Visitenkarte des MOJO-Instituts. Hier entdecken neue User das Ökosystem. |
 
 ### Commerce & Payments
@@ -182,7 +260,7 @@ Tools für das eigene Gesundheitsbusiness.
 
 | App | Domain | Beschreibung |
 |-----|--------|--------------|
-| **payments.mojo** | payments.mojo-institut.de | Zentraler Payment Hub um Zahlungen entgegenzunehmen, Rechnungen zu erstellen und zu verwalten. Unterstützt Subscriptions und Einmalzahlungen. |
+| **payments.mojo** | payments.mojo-institut.de | **Multitenancy Payment Hub für B2B Kunden**. Jeder B2B Kunde hat seinen eigenen Tenant für Zahlungsabwicklung. Verarbeitet Zahlungen für B2C → B2B Services (Events, Mentoring). |
 | **kontakte.mojo** | kontakte.mojo-institut.de | Zentrale Kontaktdatenbank (Single Source of Truth) für Leads, Kunden und Partner (Affiliates). CRM-Funktionalität für das eigene Business. |
 | **pos.mojo** | pos.mojo-institut.de | Point of Sale – simpel an der Theke Zahlungen per Karte entgegennehmen. Perfekt für Präsenz-Angebote. |
 | **checkin.mojo** | checkin.mojo-institut.de | Verwaltung von 10er-Karten für das erste eigene Kurssystem. Einfacher Einstieg ins Business mit physischen Angeboten. |
@@ -209,7 +287,7 @@ Die technische Basis des Ökosystems.
 
 ---
 
-## 4. Architektur
+## 5. Architektur
 
 ### System-Übersicht
 
@@ -299,7 +377,7 @@ Alle API-Endpoints sind unter `/api` erreichbar (nicht `/api/v1`).
 
 ---
 
-## 5. Entitlement-System
+## 6. Entitlement-System
 
 ### Konzept
 
@@ -384,7 +462,7 @@ Entitlements werden über `payments.mojo` verwaltet und bei Subscription-Änderu
 
 ---
 
-## 6. Technologie-Stack
+## 7. Technologie-Stack
 
 ### Übersicht
 
@@ -423,7 +501,7 @@ Alle Services werden über **Traefik** geroutet – keine Port-Konfiguration in 
 
 ---
 
-## 7. Coding Standards
+## 8. Coding Standards
 
 ### Kurzfassung
 
@@ -468,12 +546,13 @@ Alle Services werden über **Traefik** geroutet – keine Port-Konfiguration in 
 
 ---
 
-## 8. Referenzen
+## 9. Referenzen
 
 ### Projekt-Dokumentationen
 
 | Projekt | Pfad |
 |---------|------|
+| **Business Model** | `platform.mojo/docs/BUSINESS_MODEL.md` ⭐ |
 | Coding Standards | `platform.mojo/docs/CODING_STANDARDS.md` |
 | Staging Konvention | `platform.mojo/docs/STAGING_SERVER_CONVENTION.md` |
 | Projekt-Setup | `platform.mojo/docs/PROJECT_SETUP.md` |
@@ -510,6 +589,7 @@ Alle Services werden über **Traefik** geroutet – keine Port-Konfiguration in 
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 2.1.0 | 03.01.2026 | Business Model klar strukturiert: Flywheel-System B2C/B2B, zentrale Journey über campus.mojo, Mitgliedschafts-Stufen dokumentiert |
 | 2.0.0 | 01.01.2026 | Migration zu platform.mojo, URL-Konvention auf `*.staging.*`, Package-Namen auf `@gkeferstein/*`, MOJO-Terminologie hinzugefügt |
 | 1.0.0 | 29.12.2025 | Initial Release – Zentrale Ökosystem-Dokumentation |
 
