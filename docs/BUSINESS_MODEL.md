@@ -447,8 +447,8 @@ campus.mojo-institut.de
 
 ### Dokumentation aktualisieren
 
-- [ ] `MOJO_ECOSYSTEM.md` aktualisieren mit B2C/B2B Trennung
-- [ ] User Journey in `campus.mojo` dokumentieren
+- [x] `MOJO_ECOSYSTEM.md` aktualisieren mit B2C/B2B Trennung
+- [x] B2C Angebotsmodell detailliert ausgearbeitet → [B2C_OFFER_MODEL.md](./B2C_OFFER_MODEL.md)
 - [ ] Architektur-Dokumentation für Multitenancy-Ansatz
 
 ### Technische Umsetzung
@@ -458,12 +458,27 @@ campus.mojo-institut.de
 - [ ] Event/Mentoring-Buchungssystem planen
 - [ ] Integration `campus.mojo` ↔ `payments.mojo` planen
 
+### B2C Rollout
+
+- [ ] Onboarding-Wizard implementieren
+- [ ] Progressive Feature Freischaltung bauen
+- [ ] LEBENSENERGIE Dashboard entwickeln
+
+---
+
+## Referenzen
+
+- **B2C Angebotsmodell:** [B2C_OFFER_MODEL.md](./B2C_OFFER_MODEL.md) – Detailliertes Angebotsmodell für B2C Segment
+- **Coding Standards:** [CODING_STANDARDS.md](./CODING_STANDARDS.md)
+- **MOJO Ökosystem:** [MOJO_ECOSYSTEM.md](./MOJO_ECOSYSTEM.md)
+
 ---
 
 ## Changelog
 
 | Version | Datum | Änderungen |
 |---------|-------|------------|
+| 1.1.0 | 03.01.2026 | B2C Angebotsmodell Referenz hinzugefügt |
 | 1.0.0 | 03.01.2026 | Initial Release – Business Model Dokumentation mit Flywheel-System |
 
 ---

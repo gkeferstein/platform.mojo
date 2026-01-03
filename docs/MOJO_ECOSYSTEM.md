@@ -553,6 +553,7 @@ Alle Services werden über **Traefik** geroutet – keine Port-Konfiguration in 
 | Projekt | Pfad |
 |---------|------|
 | **Business Model** | `platform.mojo/docs/BUSINESS_MODEL.md` ⭐ |
+| **B2C Angebotsmodell** | `platform.mojo/docs/B2C_OFFER_MODEL.md` ⭐⭐ |
 | Coding Standards | `platform.mojo/docs/CODING_STANDARDS.md` |
 | Staging Konvention | `platform.mojo/docs/STAGING_SERVER_CONVENTION.md` |
 | Projekt-Setup | `platform.mojo/docs/PROJECT_SETUP.md` |
