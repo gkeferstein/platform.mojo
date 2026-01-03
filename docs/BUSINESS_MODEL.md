@@ -346,31 +346,157 @@ Siehe [Abschnitt 7.5. Platform-Hierarchie: Regionale Distributoren](#75-platform
 
 ## 7.1. Revenue-Modell
 
-### Revenue-Streams
+### Revenue-Flows im Detail
 
-#### 1. B2C Mitgliedschaften
+#### Flow 1: `campus.mojo` – Mitgliedschaften (B2C & B2B)
 
-| Stufe | Name | Revenue |
-|-------|------|---------|
-| Stufe 1 | LEBENSENERGIE | €X/Monat |
-| Stufe 2 | RESILIENZ | €Y/Monat (> X) |
+**Alle Mitgliedschaften gehen direkt an Platform Owner (MOJO LLC)**
 
-#### 2. B2B Mitgliedschaften
+**Mitgliedschaften:**
+- B2C: LEBENSENERGIE, RESILIENZ
+- B2B: BUSINESS BOOTCAMP, RegenerationsmedizinOS
 
-| Stufe | Name | Revenue |
-|-------|------|---------|
-| Stufe 3 | BUSINESS BOOTCAMP | €Z/Monat |
-| Stufe 4 | RegenerationsmedizinOS | €W/Monat (> Z) |
+**Revenue-Aufteilung:**
+```
+B2C/B2B zahlt Mitgliedschaft (z.B. €29/Monat)
+    ↓
+Platform Owner (MOJO LLC) erhält: €29.00
+    ↓
+Regional Partner erhält: 30% = €8.70
+Platform Owner behält: 70% = €20.30
+```
 
-#### 3. Transaction Fees (möglich)
+**Bestimmung der Region:**
+- Rechnungsadresse bestimmt, welcher Regional Partner die 30% Provision erhält
+- Verankert in `admin.mojo` im Regional Distribution Agreement
 
-- Bei Buchungen B2C → B2B Services über `campus.mojo`
-- Platform-Fee pro Event/Mentoring-Buchung
+**Beispiele:**
 
-#### 4. Tools (B2B)
+| Mitgliedschaft | Preis | Platform Owner (70%) | Regional Partner (30%) |
+|----------------|-------|---------------------|----------------------|
+| LEBENSENERGIE | €29/Monat | €20.30 | €8.70 |
+| RESILIENZ | €79/Monat | €55.30 | €23.70 |
+| BUSINESS BOOTCAMP | €99/Monat | €69.30 | €29.70 |
+| RegenerationsmedizinOS | €199/Monat | €139.30 | €59.70 |
 
-- `payments.mojo` – mögliche Transaction Fees
-- `pos.mojo` / `checkin.mojo` – mögliche Gebühren
+---
+
+#### Flow 2: `payments.mojo` – Transaktionen (B2C → B2B Services)
+
+**B2C Kunde bucht Event/Mentoring bei B2B Tenant**
+
+**Transaction Fee:** 3.9% + €0.50 pro Transaktion
+
+**Revenue-Aufteilung:**
+```
+B2C zahlt €100 für Event/Mentoring
+    ↓
+Transaction Fee: 3.9% + €0.50 = €4.40
+    ↓
+Tenant erhält: €100 - €4.40 = €95.60
+    ↓
+Regional Partner erhält: €4.40 (3.9% + €0.50)
+    ↓
+Regional Partner zahlt 70% an Platform Owner: €3.08
+Regional Partner behält 30%: €1.32
+```
+
+**Zusammengefasst pro €100 Transaktion:**
+- **Tenant:** €95.60 (95.6%)
+- **Regional Partner:** €1.32 (1.32% von €100)
+- **Platform Owner:** €3.08 (3.08% von €100)
+
+**Verankerung:**
+- Transaction Fee Deal zwischen Regional Partner und Tenant
+- 70/30 Split zwischen Regional Partner und Platform Owner
+- Alles in `admin.mojo` im Regional Distribution Agreement verankert
+
+**Beispiele:**
+
+| Transaktionsbetrag | Transaction Fee | Tenant erhält | Regional Partner | Platform Owner |
+|-------------------|----------------|---------------|------------------|----------------|
+| €50 | €2.45 (3.9% + €0.50) | €47.55 | €0.74 (30% von €2.45) | €1.72 (70% von €2.45) |
+| €100 | €4.40 (3.9% + €0.50) | €95.60 | €1.32 (30% von €4.40) | €3.08 (70% von €4.40) |
+| €200 | €8.30 (3.9% + €0.50) | €191.70 | €2.49 (30% von €8.30) | €5.81 (70% von €8.30) |
+| €500 | €20.00 (3.9% + €0.50) | €480.00 | €6.00 (30% von €20.00) | €14.00 (70% von €20.00) |
+
+---
+
+### Revenue-Streams Übersicht
+
+#### 1. Mitgliedschaften (campus.mojo)
+
+- **B2C Mitgliedschaften:**
+  - LEBENSENERGIE, RESILIENZ
+- **B2B Mitgliedschaften:**
+  - BUSINESS BOOTCAMP, RegenerationsmedizinOS
+
+**Flow:** Direkt an Platform Owner → Regional Partner erhält 30% (basierend auf Rechnungsadresse)
+
+#### 2. Transaction Fees (payments.mojo)
+
+- **B2C → B2B Services:**
+  - Events, Mentoring, Workshops
+  - Transaction Fee: 3.9% + €0.50
+  - Regional Partner erhält Fee → zahlt 70% an Platform Owner
+
+#### 3. Regional Distribution Agreements
+
+- **Verwaltung in `admin.mojo`:**
+  - Regional Partner Verträge
+  - 30% Provision für Mitgliedschaften
+  - 30% von Transaction Fees (70% gehen an Platform Owner)
+  - Region bestimmt durch Rechnungsadresse (Mitgliedschaften) oder Tenant-Region (Transaktionen)
+
+---
+
+### Revenue-Flow Visualisierung
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              REVENUE FLOW: Mitgliedschaften                 │
+└─────────────────────────────────────────────────────────────┘
+
+B2C/B2B zahlt Mitgliedschaft (€29)
+    ↓
+Platform Owner (MOJO LLC) erhält: €29.00
+    ↓
+    ├─ Platform Owner behält: €20.30 (70%)
+    └─ Regional Partner erhält: €8.70 (30%)
+       (Bestimmt durch Rechnungsadresse)
+
+┌─────────────────────────────────────────────────────────────┐
+│           REVENUE FLOW: payments.mojo Transaktionen         │
+└─────────────────────────────────────────────────────────────┘
+
+B2C bucht Event bei B2B Tenant (€100)
+    ↓
+Transaction Fee: 3.9% + €0.50 = €4.40
+    ↓
+    ├─ Tenant erhält: €95.60
+    └─ Regional Partner erhält: €4.40
+       ↓
+       ├─ Platform Owner erhält: €3.08 (70% von €4.40)
+       └─ Regional Partner behält: €1.32 (30% von €4.40)
+```
+
+---
+
+### Wichtige Punkte
+
+1. **Tenants sind Kunden des Platform Owners:**
+   - Tenants zahlen Transaction Fee an Regional Partner
+   - Regional Partner ist verantwortlich für Vertrieb und regionalen Content/Distribution
+   - Regional Partner erhält dafür 30% der Transaction Fees
+
+2. **Regionale Distribution Agreements:**
+   - Alles in `admin.mojo` verankert
+   - Klare Verträge zwischen Platform Owner und Regional Partner
+   - 70/30 Split bei allen Revenue-Streams
+
+3. **Region-Bestimmung:**
+   - **Mitgliedschaften:** Rechnungsadresse bestimmt Region
+   - **Transaktionen:** Tenant-Region bestimmt, welcher Regional Partner die Fee erhält
 
 ---
 
